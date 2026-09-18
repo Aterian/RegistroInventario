@@ -325,14 +325,14 @@ def save_proyectos_usuarios_cache_local(proyectos: List[Dict[str, Any]], usuario
         cursor.execute("DELETE FROM proyectos_cache")
         for p in proyectos:
             cursor.execute("""
-                INSERT INTO proyectos_cache (id_proyecto, denominacion, area, updated_at)
+                INSERT OR REPLACE INTO proyectos_cache (id_proyecto, denominacion, area, updated_at)
                 VALUES (?, ?, ?, ?)
             """, (str(p.get("id_proyecto")), str(p.get("denominacion") or ""), str(p.get("area") or ""), now_iso))
 
         cursor.execute("DELETE FROM usuarios_cache")
         for u in usuarios:
             cursor.execute("""
-                INSERT INTO usuarios_cache (id_usuario, nombre, email, area, dni, updated_at)
+                INSERT OR REPLACE INTO usuarios_cache (id_usuario, nombre, email, area, dni, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?)
             """, (str(u.get("id_usuario")), str(u.get("nombre") or ""), str(u.get("email") or ""), str(u.get("area") or ""), str(u.get("dni") or ""), now_iso))
         conn.commit()
