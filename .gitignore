@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Node / Frontend
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Secrets & Credentials
+credentials.json
+backend/credentials.json
+!backend/credentials.json.example
+.env
+.env.*
+*.pem
+*.key
+token.json
+
+# SQLite & Runtime Storage
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+data/firmas/*
+!data/firmas/.gitkeep
+data/remitos_pdf/*
+!data/remitos_pdf/.gitkeep
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
