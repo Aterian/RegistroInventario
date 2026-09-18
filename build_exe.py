@@ -6,11 +6,9 @@ from pathlib import Path
 ROOT = Path(__file__).parent.resolve()
 
 def build():
-    # 1. Asegurar que frontend/dist esté al día
-    dist_dir = ROOT / "frontend" / "dist"
-    if not (dist_dir / "index.html").exists():
-        print("Compilando frontend Vite...")
-        subprocess.run(["npm", "run", "build"], cwd=str(ROOT / "frontend"), check=True, shell=True)
+    # 1. Asegurar que frontend/dist esté al día con la última versión del código
+    print("Compilando frontend Vite...")
+    subprocess.run(["npm", "run", "build"], cwd=str(ROOT / "frontend"), check=True, shell=True)
 
     # 2. Configurar recursos a empaquetar
     add_datas = [
