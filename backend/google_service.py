@@ -671,7 +671,7 @@ class GoogleService:
             return get_viajes_activos_local()
 
         try:
-            records = ws.get_all_records()
+            records = ws.get_all_records(expected_headers=REGISTRO_GASTOS_COLUMNS)
             viajes_map = {}
 
             for r in records:
