@@ -246,18 +246,30 @@ export const MovimientosViewer = () => {
       {/* Modal Registrar Movimiento Manual */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '520px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>
-                Registrar Movimiento Manual de Stock
-              </h3>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px', padding: '2rem 2.25rem' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '1.5rem',
+              paddingBottom: '0.85rem',
+              borderBottom: '1px solid var(--border-subtle)' 
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Registrar Movimiento Manual de Stock
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Añade ingresos por compras, ajustes directos o bajas de inventario
+                </p>
+              </div>
               <button onClick={() => setIsModalOpen(false)} className="btn btn-sm btn-outline">
                 <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleCrearMovimiento} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <div className="form-group">
+            <form onSubmit={handleCrearMovimiento} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Tipo de Movimiento *</label>
                 <select className="form-select" value={tipoMov} onChange={(e) => setTipoMov(e.target.value)}>
                   <option value="Ingreso">📥 Ingreso (Compra / Reposición)</option>
@@ -266,7 +278,7 @@ export const MovimientosViewer = () => {
                 </select>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Elemento / Descripción *</label>
                 <input 
                   type="text" 
@@ -278,8 +290,8 @@ export const MovimientosViewer = () => {
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Categoría</label>
                   <select className="form-select" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
                     <option value="Materiales">Materiales</option>
@@ -290,7 +302,7 @@ export const MovimientosViewer = () => {
                   </select>
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Cantidad *</label>
                   <input 
                     type="number" 
@@ -303,7 +315,7 @@ export const MovimientosViewer = () => {
                 </div>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Usuario / Responsable</label>
                 <input 
                   type="text" 
@@ -314,7 +326,7 @@ export const MovimientosViewer = () => {
                 />
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Observaciones / N° Factura / Motivo</label>
                 <textarea 
                   className="form-input" 
@@ -325,7 +337,14 @@ export const MovimientosViewer = () => {
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                gap: '0.75rem', 
+                marginTop: '1.25rem',
+                paddingTop: '1rem',
+                borderTop: '1px solid var(--border-subtle)' 
+              }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
                   Cancelar
                 </button>

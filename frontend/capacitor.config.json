@@ -2,7 +2,6 @@
   "appId": "com.ingeap.inventario",
   "appName": "Ingeap Inventario",
   "webDir": "dist",
-  "bundledWebRuntime": false,
   "server": {
     "cleartext": true,
     "androidScheme": "http"

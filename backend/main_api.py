@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
-from backend.config import UPLOADS_DIR, PROJECT_ROOT
+from backend.config import UPLOADS_DIR, PROJECT_ROOT, STATIC_DIR
 from backend.database import init_db
 from backend.routes import router
 
@@ -45,7 +45,7 @@ app.mount("/api/uploads/firmas", StaticFiles(directory=str(UPLOADS_DIR)), name="
 app.include_router(router)
 
 # Si existe la compilación de frontend (dist), servirla
-dist_dir = PROJECT_ROOT / "frontend" / "dist"
+dist_dir = STATIC_DIR
 if dist_dir.exists():
     app.mount("/assets", StaticFiles(directory=str(dist_dir / "assets")), name="assets")
 

@@ -10,7 +10,7 @@ from pathlib import Path
 import uvicorn
 from PIL import Image, ImageDraw
 
-from backend.config import SERVER_HOST, SERVER_PORT, COLOR_PRIMARY_RED, PROJECT_ROOT
+from backend.config import SERVER_HOST, SERVER_PORT, COLOR_PRIMARY_RED, PROJECT_ROOT, STATIC_DIR
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("ingeap.main")
@@ -35,7 +35,8 @@ def create_tray_image():
 def run_uvicorn():
     """Ejecuta el servidor FastAPI con Uvicorn."""
     logger.info(f"Iniciando servidor FastAPI en {SERVER_HOST}:{SERVER_PORT}...")
-    uvicorn.run("backend.main_api:app", host=SERVER_HOST, port=SERVER_PORT, log_level="info")
+    from backend.main_api import app
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_level="info")
 
 def setup_tray(window):
     """Configura el icono en la bandeja del sistema con PyStray."""
@@ -90,14 +91,14 @@ def main():
 
     # Determinar si cargamos Vite dev server o frontend/dist/index.html
     target_url = f"http://localhost:{SERVER_PORT}"
-    dist_index = PROJECT_ROOT / "frontend" / "dist" / "index.html"
+    dist_index = STATIC_DIR / "index.html"
 
     if is_port_in_use(5173):
         target_url = args.dev_url
         logger.info(f"Detectado servidor Vite en ejecución. Apuntando PyWebView a {target_url}")
     elif dist_index.exists():
         target_url = f"http://localhost:{SERVER_PORT}"
-        logger.info(f"Frontend compilado detectado. Apuntando PyWebView a {target_url}")
+        logger.info(f"Frontend compilado detectado en {dist_index}. Apuntando PyWebView a {target_url}")
     else:
         target_url = f"http://localhost:{SERVER_PORT}"
         logger.info(f"Apuntando PyWebView a backend raíz {target_url}")
@@ -131,4 +132,6 @@ def main():
             logger.info("Servidor detenido.")
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()

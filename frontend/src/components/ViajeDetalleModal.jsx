@@ -28,7 +28,7 @@ export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno }) => 
       <div 
         className="modal-content" 
         onClick={(e) => e.stopPropagation()} 
-        style={{ maxWidth: '850px', maxHeight: '90vh', overflowY: 'auto' }}
+        style={{ maxWidth: '880px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem 2.25rem' }}
       >
         {/* Header */}
         <div style={{

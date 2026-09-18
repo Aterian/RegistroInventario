@@ -258,18 +258,30 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
       {/* Modal Nueva Solicitud */}
       {isModalOpen && (
         <div className="modal-overlay" onClick={() => setIsModalOpen(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '540px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
-              <h3 style={{ margin: 0, fontSize: '1.2rem', color: 'var(--text-main)' }}>
-                Nueva Solicitud de Compra
-              </h3>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '580px', padding: '2rem 2.25rem' }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center', 
+              marginBottom: '1.5rem',
+              paddingBottom: '0.85rem',
+              borderBottom: '1px solid var(--border-subtle)' 
+            }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-main)' }}>
+                  Nueva Solicitud de Compra
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  Ingresa los detalles del material o insumo a adquirir
+                </p>
+              </div>
               <button onClick={() => setIsModalOpen(false)} className="btn btn-sm btn-outline">
                 <X size={16} />
               </button>
             </div>
 
-            <form onSubmit={handleCrearSolicitud} style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
-              <div className="form-group">
+            <form onSubmit={handleCrearSolicitud} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Elemento / Material requerido *</label>
                 <input 
                   type="text" 
@@ -281,8 +293,8 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                 />
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Categoría</label>
                   <select className="form-select" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
                     <option value="Materiales">Materiales</option>
@@ -294,7 +306,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                   </select>
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Cantidad Requerida *</label>
                   <input 
                     type="number" 
@@ -308,8 +320,8 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                <div className="form-group">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Solicitante (Empleado) *</label>
                   <input 
                     type="text" 
@@ -321,7 +333,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                   />
                 </div>
 
-                <div className="form-group">
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                   <label className="form-label">Prioridad</label>
                   <select className="form-select" value={prioridad} onChange={(e) => setPrioridad(e.target.value)}>
                     <option value="Media">Media</option>
@@ -332,7 +344,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                 </div>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Proyecto Asociado (Opcional)</label>
                 <select className="form-select" value={idProyecto} onChange={(e) => setIdProyecto(e.target.value)}>
                   <option value="">General / Taller / Sin proyecto específico</option>
@@ -344,7 +356,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                 </select>
               </div>
 
-              <div className="form-group">
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
                 <label className="form-label">Motivo o Justificación</label>
                 <textarea 
                   className="form-input" 
@@ -355,7 +367,14 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
                 />
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'flex-end', 
+                gap: '0.75rem', 
+                marginTop: '1.25rem',
+                paddingTop: '1rem',
+                borderTop: '1px solid var(--border-subtle)'
+              }}>
                 <button type="button" onClick={() => setIsModalOpen(false)} className="btn btn-secondary">
                   Cancelar
                 </button>

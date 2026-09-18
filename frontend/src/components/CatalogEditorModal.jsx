@@ -101,15 +101,15 @@ export const CatalogEditorModal = ({
       <div 
         className="modal-content" 
         onClick={(e) => e.stopPropagation()} 
-        style={{ maxWidth: '680px', maxHeight: '92vh', overflowY: 'auto' }}
+        style={{ maxWidth: '720px', maxHeight: '92vh', overflowY: 'auto', padding: '2rem 2.25rem' }}
       >
         <div style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
           borderBottom: '1px solid var(--border-subtle)',
-          paddingBottom: '0.85rem',
-          marginBottom: '1rem'
+          paddingBottom: '1rem',
+          marginBottom: '1.5rem'
         }}>
           <div>
             <h3 style={{ margin: 0, fontSize: '1.25rem', color: 'var(--text-main)' }}>
