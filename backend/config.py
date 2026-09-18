@@ -13,6 +13,10 @@ DATA_DIR.mkdir(exist_ok=True)
 UPLOADS_DIR.mkdir(exist_ok=True)
 PDFS_DIR.mkdir(exist_ok=True)
 
+# Directorio de documentación local
+DOCS_DIR = DATA_DIR / "documentos"
+DOCS_DIR.mkdir(exist_ok=True)
+
 # Archivo de credenciales de Google Service Account
 CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", str(BASE_DIR / "credentials.json"))
 
@@ -20,9 +24,13 @@ CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", str(BASE_DIR / "credenti
 SQLITE_DB_PATH = str(DATA_DIR / "inventario_local.db")
 
 # Google Sheets Nombres de Libros y Hojas
-SHEET_INVENTARIO_NAME = os.getenv("SHEET_INVENTARIO_NAME", "Inventario v1.5")
+SHEET_INVENTARIO_NAME = os.getenv("SHEET_INVENTARIO_NAME", "Inventario v1.5 - Dev")
 SHEET_ROSTER_NAME = os.getenv("SHEET_ROSTER_NAME", "BBDD_asist_roster")
 SHEET_REGISTRO_GASTOS_TAB = os.getenv("SHEET_REGISTRO_GASTOS_TAB", "registro_gastos")
+SHEET_SOLICITUDES_TAB = os.getenv("SHEET_SOLICITUDES_TAB", "solicitudes_compras")
+SHEET_MOVIMIENTOS_TAB = os.getenv("SHEET_MOVIMIENTOS_TAB", "movimientos_stock")
+SHEET_CONTROL_M_TAB = "3_1_Control_M"
+SHEET_CONTROL_I_TAB = "2_1_Control_I"
 
 # Pestañas de Catálogo en Inventario v1.5
 CATALOG_TABS = [
@@ -30,13 +38,18 @@ CATALOG_TABS = [
     "2_0_Instrumental",
     "2_1_Accesorios",
     "2_1_Adicional",
+    "2_1_Instrumental_repuestos",
     "3_0_Movilidad",
     "4_0_Informatica",
     "5_0_Herramientas",
     "6_0_Materiales"
 ]
 
-# Google Drive ID de carpeta para firmas (opcional, si está vacío se sube a raíz o almacena público)
+# Umbrales para alertas de vencimiento (en días)
+ALERT_DAYS_WARNING = 60   # 🟡 Alerta amarilla: entre 31 y 60 días
+ALERT_DAYS_CRITICAL = 30  # 🔴 Alerta roja: 30 días o menos (o ya vencido)
+
+# Google Drive ID de carpeta para firmas (opcional)
 DRIVE_SIGNATURES_FOLDER_ID = os.getenv("DRIVE_SIGNATURES_FOLDER_ID", "")
 
 # Configuración de Red Backend

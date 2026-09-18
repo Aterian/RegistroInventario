@@ -58,3 +58,65 @@ class EstadoResponse(BaseModel):
     local_db_ok: bool
     viajes_activos_count: int
     timestamp: str
+
+class ElementoCreateRequest(BaseModel):
+    categoria: str
+    nombre: str
+    codigo_interno: Optional[str] = ""
+    marca: Optional[str] = ""
+    modelo: Optional[str] = ""
+    numero_serie: Optional[str] = ""
+    tipo: Optional[str] = ""
+    subcategoria: Optional[str] = ""
+    patente: Optional[str] = ""
+    stock_minimo: Optional[float] = 0.0
+    stock_actual: Optional[float] = 0.0
+    elementos_compatibles_ids: Optional[List[str]] = []
+    url_carpeta: Optional[str] = ""
+    observaciones: Optional[str] = ""
+
+class ElementoUpdateRequest(BaseModel):
+    nombre: Optional[str] = None
+    codigo_interno: Optional[str] = None
+    marca: Optional[str] = None
+    modelo: Optional[str] = None
+    numero_serie: Optional[str] = None
+    tipo: Optional[str] = None
+    subcategoria: Optional[str] = None
+    patente: Optional[str] = None
+    stock_minimo: Optional[float] = None
+    stock_actual: Optional[float] = None
+    elementos_compatibles_ids: Optional[List[str]] = None
+    url_carpeta: Optional[str] = None
+    observaciones: Optional[str] = None
+
+class StockMinimoRequest(BaseModel):
+    id_elemento: str
+    stock_minimo: float
+
+class SolicitudCreateRequest(BaseModel):
+    elemento: str
+    categoria: Optional[str] = ""
+    cantidad: float = 1.0
+    solicitante: str
+    prioridad: str = "Media"
+    id_proyecto: Optional[str] = ""
+    proyecto: Optional[str] = ""
+    observaciones: Optional[str] = ""
+
+class SolicitudUpdateRequest(BaseModel):
+    estado: str
+    observaciones: Optional[str] = None
+
+class MovimientoCreateRequest(BaseModel):
+    tipo_movimiento: str
+    id_elemento: Optional[str] = ""
+    categoria: Optional[str] = ""
+    elemento: str
+    codigo_interno: Optional[str] = ""
+    cantidad: float
+    id_viaje: Optional[str] = ""
+    proyecto: Optional[str] = ""
+    usuario: str
+    observaciones: Optional[str] = ""
+

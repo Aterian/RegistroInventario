@@ -11,7 +11,9 @@ import {
   CheckCircle2, 
   Truck, 
   X, 
-  Car 
+  Car,
+  Building2,
+  Info
 } from 'lucide-react';
 import { SignaturePadModal } from './SignaturePadModal';
 import { api } from '../api';
@@ -22,6 +24,9 @@ export const SalidaForm = ({
   onCancel 
 }) => {
   const [selectedProyectos, setSelectedProyectos] = useState([]);
+  const [proyectoSearch, setProyectoSearch] = useState('');
+  const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
+
   const [selectedUser, setSelectedUser] = useState('');
   const [customUser, setCustomUser] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
@@ -43,6 +48,30 @@ export const SalidaForm = ({
   const inventario = catalogos?.inventario || [];
   const categorias = catalogos?.categorias || [];
 
+  // Filtrado de proyectos en la barra de búsqueda
+  const filteredProyectos = useMemo(() => {
+    const term = proyectoSearch.toLowerCase().trim();
+    if (!term) return proyectos.slice(0, 10);
+    return proyectos.filter(p => 
+      (p.denominacion || '').toLowerCase().includes(term) ||
+      (p.id_proyecto || '').toLowerCase().includes(term) ||
+      (p.area || '').toLowerCase().includes(term)
+    );
+  }, [proyectos, proyectoSearch]);
+
+  // Manejar selección de proyectos
+  const handleAddProyecto = (projId) => {
+    if (!selectedProyectos.includes(projId)) {
+      setSelectedProyectos([...selectedProyectos, projId]);
+    }
+    setProyectoSearch('');
+    setIsProjectDropdownOpen(false);
+  };
+
+  const handleRemoveProyecto = (projId) => {
+    setSelectedProyectos(selectedProyectos.filter(id => id !== projId));
+  };
+
   // Filtrado de ítems de inventario disponibles
   const filteredInventario = useMemo(() => {
     return inventario.filter(item => {
@@ -53,34 +82,35 @@ export const SalidaForm = ({
         (item.codigo_interno || '').toLowerCase().includes(term) ||
         (item.numero_serie || '').toLowerCase().includes(term)
       );
-      // No mostrar si ya está agregado a la lista
       const alreadyAdded = selectedItems.some(si => si.id === item.id);
       return matchCat && matchSearch && !alreadyAdded;
     });
   }, [inventario, selectedCategoryFilter, itemSearch, selectedItems]);
 
-  // Manejar selección de proyectos
-  const handleToggleProyecto = (projId) => {
-    if (selectedProyectos.includes(projId)) {
-      setSelectedProyectos(selectedProyectos.filter(id => id !== projId));
-    } else {
-      setSelectedProyectos([...selectedProyectos, projId]);
-    }
-  };
-
-  // Agregar ítem a la lista de salida
+  // Agregar ítem aplicando las reglas de salida
   const handleAddItem = (item) => {
+    const cat = (item.categoria || '').toLowerCase();
+    const isMov = cat.includes('movilidad');
+    const isDron = Boolean(item.es_dron || (item.nombre || '').toLowerCase().includes('dron'));
+    const isIns = cat.includes('instrumental') && !isDron;
+
+    let initUnidad = 1.0;
+    if (isMov) initUnidad = 0.0;
+    if (isIns) initUnidad = 0.0; // Instrumental (excepto drones) valor salida = 0
+
     setSelectedItems(prev => [
       ...prev,
       {
         ...item,
-        unidad_s: item.categoria === 'Movilidad' ? 0.0 : 1.0,
-        costo_u: item.categoria === 'Movilidad' ? 0.45 : 10.0,
+        isMov,
+        isIns,
+        isDron,
+        unidad_s: initUnidad,
+        costo_u: isMov ? 0.45 : (isIns ? 25.0 : 10.0),
       }
     ]);
   };
 
-  // Actualizar valores de un ítem agregado
   const handleItemChange = (index, field, value) => {
     setSelectedItems(prev => {
       const updated = [...prev];
@@ -89,7 +119,6 @@ export const SalidaForm = ({
     });
   };
 
-  // Remover ítem de la lista
   const handleRemoveItem = (index) => {
     setSelectedItems(prev => prev.filter((_, i) => i !== index));
   };
@@ -100,7 +129,7 @@ export const SalidaForm = ({
     setErrorMessage('');
 
     if (selectedProyectos.length === 0) {
-      setErrorMessage('Debe seleccionar al menos un proyecto.');
+      setErrorMessage('Debe seleccionar al menos un proyecto asignado.');
       return;
     }
 
@@ -153,7 +182,7 @@ export const SalidaForm = ({
           <div>
             <h2 style={{ fontSize: '1.4rem', color: 'var(--text-main)' }}>Registro de Salida Multiproyecto</h2>
             <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-              Asignación de herramientas, instrumental y movilidad a uno o varios proyectos
+              Asignación de vehículos, instrumental y materiales a uno o varios proyectos de Ingeap
             </p>
           </div>
           <button type="button" onClick={onCancel} className="btn btn-sm btn-outline">
@@ -180,69 +209,139 @@ export const SalidaForm = ({
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* SECCIÓN 1: PROYECTOS */}
+          {/* SECCIÓN 1: BUSCADOR RÁPIDO DE PROYECTOS */}
           <div style={{ marginBottom: '1.75rem' }}>
-            <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <Layers size={16} color="var(--primary-red)" /> 1. Seleccione los Proyectos Asignados ({selectedProyectos.length} seleccionados)
+            <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <Building2 size={16} color="var(--primary-red)" />
+                1. Proyectos Asignados ({selectedProyectos.length} seleccionados) *
+              </span>
+              {selectedProyectos.length > 0 && (
+                <button 
+                  type="button" 
+                  onClick={() => setSelectedProyectos([])} 
+                  style={{ background: 'none', border: 'none', color: 'var(--text-dim)', fontSize: '0.75rem', cursor: 'pointer' }}
+                >
+                  Limpiar selección
+                </button>
+              )}
             </label>
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-              gap: '0.5rem',
-              maxHeight: '160px',
-              overflowY: 'auto',
-              padding: '0.5rem',
-              borderRadius: '0.5rem',
-              background: 'var(--bg-surface-elevated)',
-              border: '1px solid var(--border-subtle)'
-            }}>
-              {proyectos.map(p => {
-                const isSelected = selectedProyectos.includes(String(p.id_proyecto));
-                return (
-                  <div
-                    key={p.id_proyecto}
-                    onClick={() => handleToggleProyecto(String(p.id_proyecto))}
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      borderRadius: '0.375rem',
-                      cursor: 'pointer',
-                      fontSize: '0.825rem',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.5rem',
-                      background: isSelected ? 'rgba(204, 51, 51, 0.15)' : 'transparent',
-                      border: isSelected ? '1px solid var(--primary-red)' : '1px solid var(--border-subtle)',
-                      color: isSelected ? 'var(--primary-red)' : 'var(--text-main)',
-                      fontWeight: isSelected ? 600 : 400,
-                      transition: 'all 0.15s ease'
-                    }}
-                  >
-                    <div style={{
-                      width: '16px',
-                      height: '16px',
-                      borderRadius: '3px',
-                      border: isSelected ? 'none' : '1px solid var(--border-strong)',
-                      backgroundColor: isSelected ? 'var(--primary-red)' : 'transparent',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      color: '#fff'
-                    }}>
-                      {isSelected && <Check size={12} />}
-                    </div>
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {p.denominacion}
+
+            {/* Chips de proyectos seleccionados */}
+            {selectedProyectos.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginBottom: '0.65rem' }}>
+                {selectedProyectos.map(pId => {
+                  const pObj = proyectos.find(p => String(p.id_proyecto) === String(pId));
+                  return (
+                    <span 
+                      key={pId} 
+                      style={{
+                        background: 'rgba(204, 51, 51, 0.12)',
+                        border: '1px solid rgba(204, 51, 51, 0.3)',
+                        color: 'var(--primary-red)',
+                        padding: '0.3rem 0.65rem',
+                        borderRadius: '20px',
+                        fontSize: '0.825rem',
+                        fontWeight: 600,
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: '0.4rem'
+                      }}
+                    >
+                      {pObj ? pObj.denominacion : `Proyecto #${pId}`}
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveProyecto(pId)}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: 'var(--primary-red)', display: 'flex' }}
+                      >
+                        <X size={13} />
+                      </button>
                     </span>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Barra de búsqueda de proyectos */}
+            <div style={{ position: 'relative' }}>
+              <div style={{ position: 'relative' }}>
+                <Search size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-dim)' }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ paddingLeft: '2.2rem' }}
+                  placeholder="🔍 Escribe para buscar código o nombre del proyecto..."
+                  value={proyectoSearch}
+                  onFocus={() => setIsProjectDropdownOpen(true)}
+                  onChange={(e) => {
+                    setProyectoSearch(e.target.value);
+                    setIsProjectDropdownOpen(true);
+                  }}
+                />
+              </div>
+
+              {/* Dropdown flotante con resultados */}
+              {isProjectDropdownOpen && (
+                <div style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  right: 0,
+                  marginTop: '4px',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
+                  borderRadius: '8px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.25)',
+                  zIndex: 50,
+                  maxHeight: '220px',
+                  overflowY: 'auto'
+                }}>
+                  {filteredProyectos.length === 0 ? (
+                    <div style={{ padding: '0.75rem', fontSize: '0.85rem', color: 'var(--text-dim)', textAlign: 'center' }}>
+                      No se encontraron proyectos con "{proyectoSearch}"
+                    </div>
+                  ) : (
+                    filteredProyectos.map(p => {
+                      const isSelected = selectedProyectos.includes(String(p.id_proyecto));
+                      return (
+                        <div
+                          key={p.id_proyecto}
+                          onClick={() => handleAddProyecto(String(p.id_proyecto))}
+                          style={{
+                            padding: '0.6rem 0.85rem',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            cursor: 'pointer',
+                            fontSize: '0.85rem',
+                            borderBottom: '1px solid var(--border-subtle)',
+                            background: isSelected ? 'rgba(204, 51, 51, 0.08)' : 'transparent',
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{p.denominacion}</div>
+                            {p.area && <div style={{ fontSize: '0.75rem', color: 'var(--corporate-gray)' }}>Área: {p.area}</div>}
+                          </div>
+                          {isSelected ? (
+                            <span style={{ fontSize: '0.75rem', color: 'var(--primary-red)', fontWeight: 700 }}>✓ Seleccionado</span>
+                          ) : (
+                            <button type="button" className="btn btn-sm btn-outline" style={{ padding: '0.15rem 0.4rem', fontSize: '0.75rem' }}>
+                              + Agregar
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
           {/* SECCIÓN 2: RESPONSABLE */}
           <div style={{ marginBottom: '1.75rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <User size={16} color="var(--primary-red)" /> 2. Empleado que Retira el Inventario
+              <User size={16} color="var(--primary-red)" /> 2. Empleado que Retira el Inventario *
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: selectedUser === 'OTRO' ? '1fr 1fr' : '1fr', gap: '0.75rem' }}>
               <select
@@ -264,7 +363,7 @@ export const SalidaForm = ({
                 <input
                   type="text"
                   className="form-input"
-                  placeholder="Ingrese Nombre y Apellido del responsable..."
+                  placeholder="Ingrese Nombre y Apellido completo..."
                   value={customUser}
                   onChange={(e) => setCustomUser(e.target.value)}
                   required
@@ -273,51 +372,51 @@ export const SalidaForm = ({
             </div>
           </div>
 
-          {/* SECCIÓN 3: SELECCIÓN DE ELEMENTOS DE INVENTARIO */}
+          {/* SECCIÓN 3: SELECCIÓN DE ELEMENTOS CON REGLAS DE NEGOCIO */}
           <div style={{ marginBottom: '1.75rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <Truck size={16} color="var(--primary-red)" /> 3. Elementos a Desplazar ({selectedItems.length} seleccionados)
+              <Truck size={16} color="var(--primary-red)" /> 3. Elementos a Llevar ({selectedItems.length} seleccionados) *
             </label>
 
-            {/* Buscador y filtro de categorías */}
+            {/* Filtros de Categoría y Búsqueda */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
-                <Search size={15} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-dim)' }} />
-                <input
-                  type="text"
-                  className="form-input"
-                  style={{ paddingLeft: '2rem', paddingRight: '0.5rem' }}
-                  placeholder="Buscar en catálogo por nombre, marca, serie..."
-                  value={itemSearch}
-                  onChange={(e) => setItemSearch(e.target.value)}
-                />
-              </div>
-
               <select
                 className="form-select"
-                style={{ width: 'auto', minWidth: '160px' }}
+                style={{ width: 'auto', minWidth: '160px', height: '38px', fontSize: '0.85rem' }}
                 value={selectedCategoryFilter}
                 onChange={(e) => setSelectedCategoryFilter(e.target.value)}
               >
                 <option value="TODOS">Todas las Categorías</option>
-                {categorias.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
+                {categorias.map(c => (
+                  <option key={c} value={c}>{c}</option>
                 ))}
               </select>
+
+              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+                <Search size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-dim)' }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  style={{ paddingLeft: '2rem', height: '38px', fontSize: '0.85rem' }}
+                  placeholder="Buscar ítem por nombre, código interno, serie..."
+                  value={itemSearch}
+                  onChange={(e) => setItemSearch(e.target.value)}
+                />
+              </div>
             </div>
 
-            {/* Lista de sugerencias del catálogo */}
+            {/* Lista disponible para agregar */}
             <div style={{
-              maxHeight: '180px',
+              maxHeight: '170px',
               overflowY: 'auto',
               border: '1px solid var(--border-subtle)',
               borderRadius: '0.5rem',
-              background: 'var(--bg-surface-elevated)',
+              background: 'var(--bg-card-hover)',
               marginBottom: '1rem'
             }}>
               {filteredInventario.length === 0 ? (
                 <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--text-dim)', fontSize: '0.85rem' }}>
-                  No se encontraron elementos disponibles en el catálogo.
+                  No hay ítems disponibles para agregar con los filtros actuales.
                 </div>
               ) : (
                 filteredInventario.slice(0, 30).map(item => (
@@ -326,28 +425,17 @@ export const SalidaForm = ({
                     onClick={() => handleAddItem(item)}
                     style={{
                       padding: '0.5rem 0.85rem',
-                      borderBottom: '1px solid var(--border-subtle)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'space-between',
+                      borderBottom: '1px solid var(--border-subtle)',
                       cursor: 'pointer',
-                      fontSize: '0.85rem',
-                      transition: 'background 0.15s ease'
+                      fontSize: '0.825rem'
                     }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card-hover)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                   >
                     <div>
-                      <span style={{
-                        fontSize: '0.7rem',
-                        fontWeight: 700,
-                        padding: '0.15rem 0.4rem',
-                        borderRadius: '3px',
-                        background: 'rgba(204,51,51,0.1)',
-                        color: 'var(--primary-red)',
-                        marginRight: '0.5rem'
-                      }}>
-                        {item.categoria}
+                      <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: 700, marginRight: '0.5rem' }}>
+                        [{item.categoria}]
                       </span>
                       <strong style={{ color: 'var(--text-main)' }}>{item.nombre}</strong>
                       {item.codigo_interno && (
@@ -369,21 +457,21 @@ export const SalidaForm = ({
               )}
             </div>
 
-            {/* Tabla de ítems seleccionados con sus lecturas iniciales */}
+            {/* Tabla de ítems seleccionados con sus lecturas iniciales según reglas */}
             {selectedItems.length > 0 && (
               <div style={{
                 borderRadius: '0.5rem',
-                border: '1px solid var(--border-strong)',
+                border: '1px solid var(--border-subtle)',
                 overflow: 'hidden',
-                background: 'var(--bg-surface)'
+                background: 'var(--bg-card)'
               }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                   <thead>
-                    <tr style={{ background: 'var(--bg-surface-elevated)', borderBottom: '1px solid var(--border-strong)', textAlign: 'left' }}>
+                    <tr style={{ background: 'var(--bg-card-hover)', borderBottom: '1px solid var(--border-subtle)', textAlign: 'left' }}>
                       <th style={{ padding: '0.65rem 0.85rem' }}>Elemento</th>
-                      <th style={{ padding: '0.65rem 0.85rem', width: '130px' }}>Unidad Salida</th>
-                      <th style={{ padding: '0.65rem 0.85rem', width: '130px' }}>Costo Unitario</th>
-                      <th style={{ padding: '0.65rem 0.85rem', width: '60px', textAlign: 'center' }}>Acción</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '220px' }}>Salida (Regla de Negocio)</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '130px' }}>Costo Unit.</th>
+                      <th style={{ padding: '0.65rem 0.85rem', width: '50px', textAlign: 'center' }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -392,30 +480,60 @@ export const SalidaForm = ({
                         <td style={{ padding: '0.65rem 0.85rem' }}>
                           <span style={{ fontSize: '0.75rem', color: 'var(--corporate-gray)' }}>{item.categoria}</span>
                           <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.nombre}</div>
+                          {item.isIns && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                              <Info size={11} /> Instrumental: valor salida 0 (días de uso al retorno)
+                            </div>
+                          )}
+                          {item.isMov && (
+                            <div style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
+                              <Info size={11} /> Movilidad: Kilómetros Odómetro
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            className="form-input"
-                            style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem' }}
-                            value={item.unidad_s}
-                            onChange={(e) => handleItemChange(idx, 'unidad_s', e.target.value)}
-                            title={item.categoria === 'Movilidad' ? 'Odómetro inicial (km)' : 'Cantidad inicial'}
-                          />
+                          {item.isIns ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: '70px', padding: '0.4rem 0.5rem', background: 'var(--bg-card-hover)', cursor: 'not-allowed' }}
+                                value={0}
+                                disabled
+                              />
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>0 fijo</span>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                              <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                className="form-input"
+                                style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem' }}
+                                value={item.unidad_s}
+                                onChange={(e) => handleItemChange(idx, 'unidad_s', e.target.value)}
+                                placeholder={item.isMov ? "Km Odómetro" : "Cantidad"}
+                              />
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                                {item.isMov ? 'km' : 'u'}
+                              </span>
+                            </div>
+                          )}
                         </td>
                         <td style={{ padding: '0.5rem' }}>
-                          <input
-                            type="number"
-                            step="any"
-                            min="0"
-                            className="form-input"
-                            style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem' }}
-                            value={item.costo_u}
-                            onChange={(e) => handleItemChange(idx, 'costo_u', e.target.value)}
-                            title="Costo por unidad de uso (USD o pesos)"
-                          />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                            <span style={{ color: 'var(--text-muted)' }}>$</span>
+                            <input
+                              type="number"
+                              step="any"
+                              min="0"
+                              className="form-input"
+                              style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem' }}
+                              value={item.costo_u}
+                              onChange={(e) => handleItemChange(idx, 'costo_u', e.target.value)}
+                            />
+                          </div>
                         </td>
                         <td style={{ padding: '0.5rem', textAlign: 'center' }}>
                           <button
@@ -439,7 +557,7 @@ export const SalidaForm = ({
           {/* SECCIÓN 4: FIRMA DIGITAL */}
           <div style={{ marginBottom: '2rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <Edit3 size={16} color="var(--primary-red)" /> 4. Firma Digital de Salida
+              <Edit3 size={16} color="var(--primary-red)" /> 4. Firma Digital de Salida *
             </label>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>

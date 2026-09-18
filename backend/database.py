@@ -75,6 +75,55 @@ def init_db() -> None:
             )
         """)
 
+        # Tabla de solicitudes de compra
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS solicitudes_compras (
+                id_solicitud TEXT PRIMARY KEY,
+                fecha TEXT,
+                solicitante TEXT,
+                elemento TEXT,
+                categoria TEXT,
+                cantidad REAL,
+                prioridad TEXT,
+                id_proyecto TEXT,
+                proyecto TEXT,
+                estado TEXT DEFAULT 'Pendiente',
+                observaciones TEXT,
+                synced_sheets INTEGER DEFAULT 0,
+                created_at TEXT,
+                updated_at TEXT
+            )
+        """)
+
+        # Tabla de movimientos de stock (Kardex)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS movimientos_stock (
+                id_movimiento TEXT PRIMARY KEY,
+                fecha_hora TEXT,
+                tipo_movimiento TEXT,
+                id_elemento TEXT,
+                categoria TEXT,
+                elemento TEXT,
+                codigo_interno TEXT,
+                cantidad REAL,
+                id_viaje TEXT,
+                proyecto TEXT,
+                usuario TEXT,
+                observaciones TEXT,
+                synced_sheets INTEGER DEFAULT 0,
+                created_at TEXT
+            )
+        """)
+
+        # Tabla de configuración de stock mínimo por elemento
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS stock_minimos (
+                id_elemento TEXT PRIMARY KEY,
+                stock_minimo REAL DEFAULT 0,
+                updated_at TEXT
+            )
+        """)
+
         # Caché local de proyectos
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS proyectos_cache (
@@ -355,3 +404,214 @@ def get_proyectos_usuarios_cache_local() -> Dict[str, List[Dict[str, Any]]]:
         return {"proyectos": p_rows, "usuarios": u_rows}
     finally:
         conn.close()
+
+def get_todos_los_viajes_local() -> List[Dict[str, Any]]:
+    """Retorna el historial completo de viajes (activos y finalizados) con sus ítems."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM viajes ORDER BY created_at DESC")
+        rows = cursor.fetchall()
+        result = []
+        for r in rows:
+            v_dict = dict(r)
+            if v_dict.get("proyectos_json"):
+                try:
+                    v_dict["proyectos"] = json.loads(v_dict["proyectos_json"])
+                except Exception:
+                    v_dict["proyectos"] = []
+            
+            cursor.execute("SELECT * FROM gastos_detalle WHERE id_viaje = ?", (v_dict["id_viaje"],))
+            item_rows = cursor.fetchall()
+            v_dict["items"] = [dict(ir) for ir in item_rows]
+            result.append(v_dict)
+        return result
+    finally:
+        conn.close()
+
+# ----------------------------------------------------------------------
+# SOLICITUDES DE COMPRA
+# ----------------------------------------------------------------------
+def save_solicitud_local(sol: Dict[str, Any]) -> None:
+    """Guarda o actualiza una solicitud de compra en SQLite."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO solicitudes_compras (
+                id_solicitud, fecha, solicitante, elemento, categoria,
+                cantidad, prioridad, id_proyecto, proyecto, estado, observaciones,
+                synced_sheets, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(sol.get("id_solicitud")),
+            str(sol.get("fecha") or now_iso[:10]),
+            str(sol.get("solicitante") or ""),
+            str(sol.get("elemento") or ""),
+            str(sol.get("categoria") or ""),
+            float(sol.get("cantidad", 1.0) or 1.0),
+            str(sol.get("prioridad") or "Media"),
+            str(sol.get("id_proyecto") or ""),
+            str(sol.get("proyecto") or ""),
+            str(sol.get("estado") or "Pendiente"),
+            str(sol.get("observaciones") or ""),
+            int(sol.get("synced_sheets", 0)),
+            sol.get("created_at") or now_iso,
+            now_iso
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_solicitudes_local(filtro_estado: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Obtiene el listado de solicitudes de compras registradas."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        if filtro_estado and filtro_estado.lower() != "todas":
+            cursor.execute("SELECT * FROM solicitudes_compras WHERE LOWER(estado) = LOWER(?) ORDER BY created_at DESC", (filtro_estado,))
+        else:
+            cursor.execute("SELECT * FROM solicitudes_compras ORDER BY created_at DESC")
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+def update_solicitud_local(id_solicitud: str, estado: str, observaciones: Optional[str] = None) -> bool:
+    """Actualiza el estado y notas de una solicitud de compra."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        if observaciones is not None:
+            cursor.execute("""
+                UPDATE solicitudes_compras 
+                SET estado = ?, observaciones = ?, updated_at = ?
+                WHERE id_solicitud = ?
+            """, (estado, observaciones, now_iso, id_solicitud))
+        else:
+            cursor.execute("""
+                UPDATE solicitudes_compras 
+                SET estado = ?, updated_at = ?
+                WHERE id_solicitud = ?
+            """, (estado, now_iso, id_solicitud))
+        conn.commit()
+        return cursor.rowcount > 0
+    finally:
+        conn.close()
+
+# ----------------------------------------------------------------------
+# MOVIMIENTOS DE STOCK (KARDEX)
+# ----------------------------------------------------------------------
+def save_movimiento_local(mov: Dict[str, Any]) -> None:
+    """Registra un movimiento en el kardex de stock."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO movimientos_stock (
+                id_movimiento, fecha_hora, tipo_movimiento, id_elemento, categoria,
+                elemento, codigo_interno, cantidad, id_viaje, proyecto, usuario,
+                observaciones, synced_sheets, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(mov.get("id_movimiento")),
+            mov.get("fecha_hora") or now_iso,
+            str(mov.get("tipo_movimiento") or "Ingreso"),
+            str(mov.get("id_elemento") or ""),
+            str(mov.get("categoria") or ""),
+            str(mov.get("elemento") or ""),
+            str(mov.get("codigo_interno") or ""),
+            float(mov.get("cantidad", 0.0) or 0.0),
+            str(mov.get("id_viaje") or ""),
+            str(mov.get("proyecto") or ""),
+            str(mov.get("usuario") or ""),
+            str(mov.get("observaciones") or ""),
+            int(mov.get("synced_sheets", 0)),
+            now_iso
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_movimientos_local(limit: int = 200, filtro_elemento: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Obtiene los últimos movimientos de stock registrados."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        if filtro_elemento:
+            cursor.execute("""
+                SELECT * FROM movimientos_stock 
+                WHERE id_elemento = ? OR elemento LIKE ?
+                ORDER BY fecha_hora DESC LIMIT ?
+            """, (filtro_elemento, f"%{filtro_elemento}%", limit))
+        else:
+            cursor.execute("SELECT * FROM movimientos_stock ORDER BY fecha_hora DESC LIMIT ?", (limit,))
+        return [dict(r) for r in cursor.fetchall()]
+    finally:
+        conn.close()
+
+# ----------------------------------------------------------------------
+# STOCK MÍNIMO POR ELEMENTO
+# ----------------------------------------------------------------------
+def save_stock_minimo_local(id_elemento: str, stock_minimo: float) -> None:
+    """Configura el stock mínimo deseado para un elemento."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO stock_minimos (id_elemento, stock_minimo, updated_at)
+            VALUES (?, ?, ?)
+        """, (str(id_elemento), float(stock_minimo), now_iso))
+        conn.commit()
+    finally:
+        conn.close()
+
+def get_stock_minimos_local() -> Dict[str, float]:
+    """Retorna un diccionario { id_elemento: stock_minimo }."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT id_elemento, stock_minimo FROM stock_minimos")
+        return {r["id_elemento"]: float(r["stock_minimo"]) for r in cursor.fetchall()}
+    finally:
+        conn.close()
+
+# ----------------------------------------------------------------------
+# CRUD ELEMENTOS EN CACHE LOCAL
+# ----------------------------------------------------------------------
+def save_elemento_catalogo_local(item: Dict[str, Any]) -> None:
+    """Agrega o actualiza un elemento individual en la caché local."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO catalogo_cache (id, categoria, codigo_interno, nombre, numero_serie, imagen, raw_data_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            str(item.get("id")),
+            str(item.get("categoria") or ""),
+            str(item.get("codigo_interno") or ""),
+            str(item.get("nombre") or ""),
+            str(item.get("numero_serie") or ""),
+            str(item.get("imagen") or ""),
+            json.dumps(item, ensure_ascii=False),
+            now_iso
+        ))
+        conn.commit()
+    finally:
+        conn.close()
+
+def delete_elemento_catalogo_local(id_elemento: str) -> None:
+    """Elimina o da de baja un elemento de la caché local."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM catalogo_cache WHERE id = ?", (str(id_elemento),))
+        conn.commit()
+    finally:
+        conn.close()
+

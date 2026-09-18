@@ -1,4 +1,3 @@
-import React from 'react';
 import { 
   Truck, 
   Layers, 
@@ -9,7 +8,10 @@ import {
   RefreshCw, 
   CheckCircle2, 
   AlertTriangle, 
-  WifiOff 
+  WifiOff,
+  ShieldAlert,
+  ShoppingCart,
+  ArrowLeftRight
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 
@@ -19,7 +21,8 @@ export const Navbar = ({
   serverStatus, 
   onRefresh, 
   isRefreshing, 
-  onOpenSettings 
+  onOpenSettings,
+  alertasCount = 0
 }) => {
   const { theme, toggleTheme } = useTheme();
 
@@ -113,24 +116,63 @@ export const Navbar = ({
         </div>
 
         {/* Navigation Tabs */}
-        <nav style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+        <nav style={{ 
+          display: 'flex', 
+          alignItems: 'center', 
+          gap: '0.35rem',
+          overflowX: 'auto',
+          maxWidth: '100%',
+          paddingBottom: '2px',
+        }}>
           <button
             onClick={() => setCurrentTab('dashboard')}
             className={`btn btn-sm ${currentTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`}
           >
-            <Truck size={15} /> Viajes Activos
+            <Truck size={15} /> Viajes
           </button>
           <button
             onClick={() => setCurrentTab('salida')}
             className={`btn btn-sm ${currentTab === 'salida' ? 'btn-primary' : 'btn-secondary'}`}
           >
-            <PlusCircle size={15} /> Nueva Salida
+            <PlusCircle size={15} /> Salida
           </button>
           <button
             onClick={() => setCurrentTab('catalogo')}
             className={`btn btn-sm ${currentTab === 'catalogo' ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Layers size={15} /> Catálogo
+          </button>
+          <button
+            onClick={() => setCurrentTab('alertas')}
+            className={`btn btn-sm ${currentTab === 'alertas' ? 'btn-primary' : 'btn-secondary'}`}
+            style={{ position: 'relative' }}
+          >
+            <ShieldAlert size={15} /> Control / Alertas
+            {alertasCount > 0 && (
+              <span style={{
+                background: 'var(--accent-red)',
+                color: '#fff',
+                fontSize: '0.65rem',
+                fontWeight: 800,
+                padding: '0.1rem 0.35rem',
+                borderRadius: '10px',
+                marginLeft: '0.3rem'
+              }}>
+                {alertasCount}
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => setCurrentTab('movimientos')}
+            className={`btn btn-sm ${currentTab === 'movimientos' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <ArrowLeftRight size={15} /> Movimientos
+          </button>
+          <button
+            onClick={() => setCurrentTab('solicitudes')}
+            className={`btn btn-sm ${currentTab === 'solicitudes' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <ShoppingCart size={15} /> Compras
           </button>
         </nav>
 

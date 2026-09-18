@@ -233,27 +233,44 @@ export const RetornoModal = ({
                     {items.map((it, idx) => {
                       const key = it.id_gasto || it.elemento;
                       const u_s = parseFloat(it.unidad_s) || 0;
-                      const u_r = parseFloat(unidadesRetorno[key]) || u_s;
-                      const diff = Math.max(0, u_r - u_s);
+                      const u_r = parseFloat(unidadesRetorno[key]) || 0;
+                      const tipo = (it.tipo || '').toLowerCase();
+                      const isMov = tipo.includes('movilidad');
+                      const isIns = tipo.includes('instrumental') && !tipo.includes('dron');
+                      const isMat = tipo.includes('material');
+
+                      let consumoTexto = '';
+                      if (isMov) {
+                        const delta = Math.max(0, u_r - u_s);
+                        consumoTexto = `+${delta.toFixed(0)} km`;
+                      } else if (isIns) {
+                        consumoTexto = `${u_r} días`;
+                      } else if (isMat) {
+                        const consumo = Math.max(0, u_s - u_r);
+                        consumoTexto = `${consumo} consumidos`;
+                      } else {
+                        consumoTexto = `${u_r} u.`;
+                      }
 
                       return (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                           <td style={{ padding: '0.5rem 0.75rem' }}>
                             <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{it.elemento}</div>
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                              {it.tipo} • Costo U: ${it.costo_u}
+                              {it.tipo} • Costo U: ${it.costo_u} {isMov ? '/km' : (isIns ? '/día' : '/u')}
                             </span>
                           </td>
                           <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>
-                            {u_s}
+                            {u_s} {isMov ? 'km' : (isIns ? '(Días al ret.)' : 'u')}
                           </td>
                           <td style={{ padding: '0.4rem 0.75rem' }}>
                             <input
                               type="number"
                               step="any"
-                              min={u_s}
+                              min={isMov ? u_s : 0}
                               className="form-input"
                               style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
+                              placeholder={isMov ? "Km final" : (isIns ? "Días de uso" : "Devueltos")}
                               value={unidadesRetorno[key] ?? ''}
                               onChange={(e) => {
                                 const val = e.target.value;
@@ -263,7 +280,7 @@ export const RetornoModal = ({
                             />
                           </td>
                           <td style={{ padding: '0.5rem 0.75rem', textAlign: 'right', fontWeight: 700, color: 'var(--primary-red)', fontFamily: 'monospace' }}>
-                            +{diff.toFixed(1)}
+                            {consumoTexto}
                           </td>
                         </tr>
                       );

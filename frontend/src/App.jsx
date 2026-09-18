@@ -4,6 +4,11 @@ import { Dashboard } from './components/Dashboard';
 import { SalidaForm } from './components/SalidaForm';
 import { RetornoModal } from './components/RetornoModal';
 import { CatalogViewer } from './components/CatalogViewer';
+import { CatalogEditorModal } from './components/CatalogEditorModal';
+import { DashboardAlertas } from './components/DashboardAlertas';
+import { MovimientosViewer } from './components/MovimientosViewer';
+import { SolicitudesViewer } from './components/SolicitudesViewer';
+import { ViajeDetalleModal } from './components/ViajeDetalleModal';
 import { SettingsModal } from './components/SettingsModal';
 import { api } from './api';
 
@@ -12,10 +17,17 @@ export function App() {
   const [serverStatus, setServerStatus] = useState(null);
   const [catalogos, setCatalogos] = useState({ proyectos: [], usuarios: [], inventario: [], categorias: [] });
   const [viajesActivos, setViajesActivos] = useState([]);
+  const [alertasCount, setAlertasCount] = useState(0);
   
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  
+  // Modales
   const [selectedViajeRetorno, setSelectedViajeRetorno] = useState(null);
+  const [selectedViajeDetalle, setSelectedViajeDetalle] = useState(null);
+  const [isCatalogEditorOpen, setIsCatalogEditorOpen] = useState(false);
+  const [elementoParaEditar, setElementoParaEditar] = useState(null);
+  const [solicitudPreload, setSolicitudPreload] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [toast, setToast] = useState(null);
 
@@ -27,11 +39,12 @@ export function App() {
   const loadData = useCallback(async (forceRecargar = false) => {
     try {
       setIsRefreshing(true);
-      // Cargar en paralelo
-      const [estadoRes, catRes, viajesRes] = await Promise.allSettled([
+      // Cargar en paralelo catálogos, estado, viajes y alertas
+      const [estadoRes, catRes, viajesRes, alertasRes] = await Promise.allSettled([
         api.getEstado(),
         api.getCatalogos(forceRecargar),
         api.getViajesActivos(),
+        api.getAlertas(),
       ]);
 
       if (estadoRes.status === 'fulfilled') {
@@ -46,6 +59,14 @@ export function App() {
 
       if (viajesRes.status === 'fulfilled') {
         setViajesActivos(viajesRes.value);
+      }
+
+      if (alertasRes.status === 'fulfilled') {
+        const res = alertasRes.value?.resumen;
+        if (res) {
+          const totalAlertas = (res.vencidos || 0) + (res.por_vencer || 0) + (res.stock_bajo || 0);
+          setAlertasCount(totalAlertas);
+        }
       }
     } catch (err) {
       console.error('Error general cargando datos:', err);
@@ -103,6 +124,7 @@ export function App() {
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
         serverStatus={serverStatus}
+        alertasCount={alertasCount}
         onRefresh={() => {
           loadData(true);
           showToast('Datos sincronizados con éxito', 'success');
@@ -119,6 +141,7 @@ export function App() {
             loading={loading}
             onNewSalida={() => setCurrentTab('salida')}
             onOpenRetorno={(v) => setSelectedViajeRetorno(v)}
+            onOpenDetalle={(v) => setSelectedViajeDetalle(v)}
           />
         )}
 
@@ -133,9 +156,52 @@ export function App() {
         {currentTab === 'catalogo' && (
           <CatalogViewer
             catalogos={catalogos}
+            onOpenCreateItem={() => {
+              setElementoParaEditar(null);
+              setIsCatalogEditorOpen(true);
+            }}
+            onOpenEditItem={(item) => {
+              setElementoParaEditar(item);
+              setIsCatalogEditorOpen(true);
+            }}
+            onReloadCatalog={() => loadData(true)}
+          />
+        )}
+
+        {currentTab === 'alertas' && (
+          <DashboardAlertas
+            onCrearSolicitudParaItem={(elem) => {
+              setSolicitudPreload(elem);
+              setCurrentTab('solicitudes');
+            }}
+          />
+        )}
+
+        {currentTab === 'movimientos' && (
+          <MovimientosViewer />
+        )}
+
+        {currentTab === 'solicitudes' && (
+          <SolicitudesViewer
+            proyectos={catalogos.proyectos}
+            prefilledItem={solicitudPreload}
+            onClearPrefilled={() => setSolicitudPreload(null)}
           />
         )}
       </main>
+
+      {/* Modal de Detalle Completo de Viaje */}
+      {selectedViajeDetalle && (
+        <ViajeDetalleModal
+          isOpen={Boolean(selectedViajeDetalle)}
+          onClose={() => setSelectedViajeDetalle(null)}
+          viaje={selectedViajeDetalle}
+          onOpenRetorno={(v) => {
+            setSelectedViajeDetalle(null);
+            setSelectedViajeRetorno(v);
+          }}
+        />
+      )}
 
       {/* Modal de Retorno de Inventario */}
       {selectedViajeRetorno && (
@@ -145,6 +211,26 @@ export function App() {
           viaje={selectedViajeRetorno}
           usuarios={catalogos.usuarios}
           onSuccess={handleRetornoSuccess}
+        />
+      )}
+
+      {/* Modal de Editor de Catálogo (Creación y Edición) */}
+      {isCatalogEditorOpen && (
+        <CatalogEditorModal
+          isOpen={isCatalogEditorOpen}
+          onClose={() => {
+            setIsCatalogEditorOpen(false);
+            setElementoParaEditar(null);
+          }}
+          itemToEdit={elementoParaEditar}
+          categorias={catalogos.categorias}
+          inventarioCompleto={catalogos.inventario}
+          onSuccess={() => {
+            setIsCatalogEditorOpen(false);
+            setElementoParaEditar(null);
+            loadData(true);
+            showToast('Catálogo actualizado con éxito', 'success');
+          }}
         />
       )}
 

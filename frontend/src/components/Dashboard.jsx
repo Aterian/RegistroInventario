@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Truck, 
   Clock, 
@@ -10,7 +10,10 @@ import {
   Package, 
   Layers, 
   CheckCircle, 
-  ExternalLink 
+  ExternalLink,
+  Eye,
+  History,
+  RefreshCw
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -18,16 +21,32 @@ export const Dashboard = ({
   viajesActivos = [], 
   loading, 
   onNewSalida, 
-  onOpenRetorno 
+  onOpenRetorno,
+  onOpenDetalle
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
+  const [vista, setVista] = useState('activos'); // 'activos' | 'historial'
+  const [historialViajes, setHistorialViajes] = useState([]);
+  const [loadingHistorial, setLoadingHistorial] = useState(false);
+
+  useEffect(() => {
+    if (vista === 'historial') {
+      setLoadingHistorial(true);
+      api.getTodosLosViajes()
+        .then(res => setHistorialViajes(res))
+        .catch(err => console.error('Error cargando historial:', err))
+        .finally(() => setLoadingHistorial(false));
+    }
+  }, [vista]);
+
+  const viajesLista = vista === 'activos' ? viajesActivos : historialViajes;
 
   // Filtrar viajes
-  const filteredViajes = viajesActivos.filter(v => {
+  const filteredViajes = viajesLista.filter(v => {
     const term = searchTerm.toLowerCase();
     const idMatch = (v.id_viaje || '').toLowerCase().includes(term);
     const userMatch = (v.user_s || '').toLowerCase().includes(term);
-    const projsMatch = (Array.isArray(v.proyectos) ? v.proyectos.join(' ') : '').toLowerCase().includes(term);
+    const projsMatch = (Array.isArray(v.proyectos) ? v.proyectos.map(p => typeof p === 'object' ? p.denominacion : p).join(' ') : '').toLowerCase().includes(term);
     return idMatch || userMatch || projsMatch;
   });
 
@@ -116,7 +135,7 @@ export const Dashboard = ({
         </div>
       </div>
 
-      {/* Header & Search Bar */}
+      {/* View Toggle & Search Bar */}
       <div style={{
         display: 'flex',
         alignItems: 'center',
@@ -125,12 +144,26 @@ export const Dashboard = ({
         gap: '1rem',
         marginTop: '0.5rem'
       }}>
-        <div>
-          <h2 style={{ fontSize: '1.35rem', color: 'var(--text-main)' }}>
-            Control de Viajes en Terreno
-          </h2>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            Listado de salidas pendientes de devolución y liquidación de inventario
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+          <div style={{ display: 'flex', gap: '0.4rem' }}>
+            <button
+              onClick={() => setVista('activos')}
+              className={`btn btn-sm ${vista === 'activos' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              <Truck size={14} /> Viajes Activos ({viajesActivos.length})
+            </button>
+            <button
+              onClick={() => setVista('historial')}
+              className={`btn btn-sm ${vista === 'historial' ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              <History size={14} /> Historial de Viajes
+            </button>
+          </div>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+            {vista === 'activos' 
+              ? 'Listado de salidas pendientes de devolución y liquidación en terreno'
+              : 'Historial completo de salidas y devoluciones con desglose de ítems'
+            }
           </p>
         </div>
 
@@ -147,52 +180,71 @@ export const Dashboard = ({
         </div>
       </div>
 
-      {/* List of Active Trips */}
-      {loading ? (
+      {/* List of Trips */}
+      {(loading || (vista === 'historial' && loadingHistorial)) ? (
         <div className="card" style={{ textAlign: 'center', padding: '3rem' }}>
-          <div style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>Cargando viajes en curso...</div>
+          <div style={{ fontSize: '1.1rem', color: 'var(--text-muted)' }}>Cargando viajes...</div>
         </div>
       ) : filteredViajes.length === 0 ? (
         <div className="card" style={{ textAlign: 'center', padding: '3.5rem 1rem' }}>
           <Truck size={48} color="var(--corporate-gray)" style={{ margin: '0 auto 1rem auto', opacity: 0.7 }} />
           <h3 style={{ fontSize: '1.2rem', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
-            {searchTerm ? 'No se encontraron viajes con ese criterio' : 'No hay viajes activos actualmente'}
+            {searchTerm ? 'No se encontraron viajes con ese criterio' : (vista === 'activos' ? 'No hay viajes activos actualmente' : 'No hay viajes registrados en el historial')}
           </h3>
           <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem', maxWidth: '440px', margin: '0 auto 1.5rem auto' }}>
-            Todos los elementos de inventario están registrados en base. Puedes registrar una nueva salida multiproyecto cuando un equipo salga a terreno.
+            {vista === 'activos' 
+              ? 'Todos los elementos de inventario están registrados en base. Puedes registrar una nueva salida multiproyecto cuando un equipo salga a terreno.'
+              : 'Los viajes completados aparecerán aquí tan pronto se registren salidas y devoluciones.'
+            }
           </p>
-          <button onClick={onNewSalida} className="btn btn-primary">
-            <PlusCircle size={16} /> Crear Nueva Salida
-          </button>
+          {vista === 'activos' && (
+            <button onClick={onNewSalida} className="btn btn-primary">
+              <PlusCircle size={16} /> Crear Nueva Salida
+            </button>
+          )}
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(360px, 1fr))', gap: '1.25rem' }}>
           {filteredViajes.map((viaje) => {
+            const isFinished = Boolean(viaje.fecha_r);
             const proyectos = Array.isArray(viaje.proyectos) ? viaje.proyectos : [];
             const items = Array.isArray(viaje.items) ? viaje.items : [];
             const pdfUrl = api.getPdfUrl(viaje.id_viaje);
 
             return (
-              <div key={viaje.id_viaje} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div key={viaje.id_viaje} className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem' }}>
                 {/* Card Header */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '0.5rem' }}>
                   <div>
-                    <span className="badge badge-active" style={{ marginBottom: '0.35rem' }}>
-                      <Clock size={11} /> EN TERRENO
-                    </span>
+                    {isFinished ? (
+                      <span className="badge badge-success" style={{ marginBottom: '0.35rem' }}>
+                        <CheckCircle size={11} /> LIQUIDADO
+                      </span>
+                    ) : (
+                      <span className="badge badge-active" style={{ marginBottom: '0.35rem' }}>
+                        <Clock size={11} /> EN TERRENO
+                      </span>
+                    )}
                     <div style={{ fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-dim)' }} title={viaje.id_viaje}>
                       ID: {viaje.id_viaje.slice(0, 8)}...{viaje.id_viaje.slice(-4)}
                     </div>
                   </div>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                    {viaje.fecha_s}
-                  </span>
+                  <div style={{ textAlign: 'right' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', display: 'block' }}>
+                      Salida: {viaje.fecha_s}
+                    </span>
+                    {isFinished && (
+                      <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', display: 'block' }}>
+                        Retorno: {viaje.fecha_r}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Responsible Person */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.875rem', color: 'var(--text-main)' }}>
                   <User size={16} color="var(--primary-red)" />
-                  <span><strong>Retira:</strong> {viaje.user_s || 'Sin asignar'}</span>
+                  <span><strong>Responsable:</strong> {viaje.user_s || 'Sin asignar'}</span>
                 </div>
 
                 {/* Projects Chips */}
@@ -225,10 +277,10 @@ export const Dashboard = ({
                   fontSize: '0.825rem',
                 }}>
                   <div style={{ fontWeight: 600, color: 'var(--text-muted)', marginBottom: '0.35rem', display: 'flex', justifyContent: 'space-between' }}>
-                    <span>Elementos Retirados:</span>
+                    <span>Elementos en viaje:</span>
                     <span>{items.length} ítem(s)</span>
                   </div>
-                  <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                  <ul style={{ listStyle: 'none', display: 'flex', flexDirection: 'column', gap: '0.25rem', padding: 0, margin: 0 }}>
                     {items.slice(0, 3).map((it, idx) => (
                       <li key={idx} style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-main)' }}>
                         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '210px' }}>
@@ -248,25 +300,38 @@ export const Dashboard = ({
                 </div>
 
                 {/* Footer Buttons */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 'auto', paddingTop: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
+                  {onOpenDetalle && (
+                    <button
+                      onClick={() => onOpenDetalle(viaje)}
+                      className="btn btn-sm btn-outline"
+                      style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                      title="Ver lista completa de elementos, firmas y costos"
+                    >
+                      <Eye size={14} /> Ver Ítems
+                    </button>
+                  )}
+
                   <a
                     href={pdfUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="btn btn-sm btn-outline"
-                    style={{ flex: 1, textDecoration: 'none' }}
-                    title="Ver remito preliminar de salida"
+                    style={{ flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                    title="Descargar Remito Oficial PDF"
                   >
-                    <FileText size={14} /> Remito PDF
+                    <FileText size={14} /> PDF
                   </a>
 
-                  <button
-                    onClick={() => onOpenRetorno(viaje)}
-                    className="btn btn-sm btn-primary"
-                    style={{ flex: 1.3 }}
-                  >
-                    <ArrowRightCircle size={14} /> Registrar Retorno
-                  </button>
+                  {!isFinished && onOpenRetorno && (
+                    <button
+                      onClick={() => onOpenRetorno(viaje)}
+                      className="btn btn-sm btn-primary"
+                      style={{ flex: 1.3, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                    >
+                      <ArrowRightCircle size={14} /> Retorno
+                    </button>
+                  )}
                 </div>
               </div>
             );
