@@ -150,22 +150,49 @@ class GoogleService:
         
         self.init_clients()
 
+    def _open_sheet(self, name_or_id: str) -> gspread.Spreadsheet:
+        """Abre un Google Sheet por ID, URL o Título."""
+        if not self.gc:
+            raise ValueError("Google Client no inicializado.")
+        from backend.config import extraer_spreadsheet_id
+        clean = extraer_spreadsheet_id(name_or_id)
+        if len(clean) > 20 and " " not in clean:
+            try:
+                return self.gc.open_by_key(clean)
+            except Exception:
+                pass
+        return self.gc.open(clean)
+
+    def _open_inventario_sheet(self) -> gspread.Spreadsheet:
+        from backend.config import cargar_configuracion
+        cfg = cargar_configuracion()
+        return self._open_sheet(cfg.get("spreadsheet_inventario", SHEET_INVENTARIO_NAME))
+
+    def _open_roster_sheet(self) -> gspread.Spreadsheet:
+        from backend.config import cargar_configuracion
+        cfg = cargar_configuracion()
+        return self._open_sheet(cfg.get("spreadsheet_roster", SHEET_ROSTER_NAME))
+
     def init_clients(self) -> bool:
-        """Inicializa los clientes de Google Sheets y Google Drive."""
-        if not os.path.exists(CREDENTIALS_FILE):
-            logger.warning(f"Archivo de credenciales de Google no encontrado en {CREDENTIALS_FILE}. Operando en modo local/contingencia.")
+        """Inicializa los clientes de Google Sheets y Google Drive con búsqueda de credenciales."""
+        from backend.config import buscar_archivo_credenciales, cargar_configuracion
+        cfg = cargar_configuracion()
+        cred_path = buscar_archivo_credenciales(cfg.get("credentials_file", "credentials.json"))
+
+        if not cred_path or not os.path.exists(cred_path):
+            logger.warning(f"Archivo de credenciales de Google no encontrado. Operando en modo local/contingencia.")
             self.is_connected = False
             return False
 
         try:
             self.credentials = Credentials.from_service_account_file(
-                CREDENTIALS_FILE,
+                cred_path,
                 scopes=SCOPES
             )
             self.gc = gspread.authorize(self.credentials)
             self.drive_service = build("drive", "v3", credentials=self.credentials, cache_discovery=False)
             self.is_connected = True
-            logger.info("Clientes de Google Sheets y Drive conectados exitosamente.")
+            logger.info(f"Clientes de Google Sheets y Drive conectados exitosamente usando {cred_path}.")
             return True
         except Exception as e:
             logger.error(f"Error al autenticar con Google APIs: {e}")
@@ -174,7 +201,11 @@ class GoogleService:
 
     def check_connection(self) -> Dict[str, Any]:
         """Comprueba el estado de la conexión a Google Sheets y Drive."""
-        if not self.is_connected and os.path.exists(CREDENTIALS_FILE):
+        from backend.config import buscar_archivo_credenciales, cargar_configuracion
+        cfg = cargar_configuracion()
+        cred_path = buscar_archivo_credenciales(cfg.get("credentials_file", "credentials.json"))
+
+        if not self.is_connected and cred_path and os.path.exists(cred_path):
             self.init_clients()
 
         status = {
@@ -182,24 +213,27 @@ class GoogleService:
             "inventario_ok": False,
             "roster_ok": False,
             "drive_ok": False,
-            "credentials_path": CREDENTIALS_FILE,
-            "credentials_exists": os.path.exists(CREDENTIALS_FILE)
+            "credentials_path": cred_path or "",
+            "credentials_exists": bool(cred_path and os.path.exists(cred_path))
         }
 
         if not self.is_connected or not self.gc:
             return status
 
-        try:
-            self.gc.open(SHEET_INVENTARIO_NAME)
-            status["inventario_ok"] = True
-        except Exception as e:
-            logger.warning(f"No se pudo abrir hoja de inventario '{SHEET_INVENTARIO_NAME}': {e}")
+        sheet_inv = cfg.get("spreadsheet_inventario", SHEET_INVENTARIO_NAME)
+        sheet_ros = cfg.get("spreadsheet_roster", SHEET_ROSTER_NAME)
 
         try:
-            self.gc.open(SHEET_ROSTER_NAME)
+            self._open_sheet(sheet_inv)
+            status["inventario_ok"] = True
+        except Exception as e:
+            logger.warning(f"No se pudo abrir hoja de inventario '{sheet_inv}': {e}")
+
+        try:
+            self._open_sheet(sheet_ros)
             status["roster_ok"] = True
         except Exception as e:
-            logger.warning(f"No se pudo abrir hoja de roster '{SHEET_ROSTER_NAME}': {e}")
+            logger.warning(f"No se pudo abrir hoja de roster '{sheet_ros}': {e}")
 
         if self.drive_service:
             try:
@@ -346,7 +380,7 @@ class GoogleService:
     def _read_proyectos(self) -> List[Dict[str, Any]]:
         """Lee la pestaña 0_proyectos del libro BBDD_asist_roster."""
         try:
-            sh = self.gc.open(SHEET_ROSTER_NAME)
+            sh = self._open_roster_sheet()
             ws = sh.worksheet("0_proyectos")
             records = ws.get_all_records()
             proyectos = []
@@ -368,7 +402,7 @@ class GoogleService:
     def _read_usuarios(self) -> List[Dict[str, Any]]:
         """Lee la pestaña 0_usuarios del libro BBDD_asist_roster."""
         try:
-            sh = self.gc.open(SHEET_ROSTER_NAME)
+            sh = self._open_roster_sheet()
             ws = sh.worksheet("0_usuarios")
             records = ws.get_all_records()
             usuarios = []
@@ -458,7 +492,7 @@ class GoogleService:
         """Lee todas las pestañas de Inventario v1.5 - Dev y las unifica."""
         unified_items = []
         try:
-            sh = self.gc.open(SHEET_INVENTARIO_NAME)
+            sh = self._open_inventario_sheet()
         except Exception as e:
             logger.error(f"No se pudo abrir '{SHEET_INVENTARIO_NAME}': {e}")
             return []
@@ -713,7 +747,7 @@ class GoogleService:
         # Sincronizar en Google Sheets
         if self.is_connected and self.gc:
             try:
-                sh = self.gc.open(SHEET_INVENTARIO_NAME)
+                sh = self._open_inventario_sheet()
                 ws = sh.worksheet(tab_name)
                 headers = ws.row_values(1)
 
@@ -781,7 +815,7 @@ class GoogleService:
         # Sincronizar en Google Sheets
         if self.is_connected and self.gc:
             try:
-                sh = self.gc.open(SHEET_INVENTARIO_NAME)
+                sh = self._open_inventario_sheet()
                 ws = sh.worksheet(tab_name)
                 headers = ws.row_values(1)
                 all_ids = ws.col_values(1)
@@ -835,7 +869,7 @@ class GoogleService:
 
         if self.is_connected and self.gc:
             try:
-                sh = self.gc.open(SHEET_INVENTARIO_NAME)
+                sh = self._open_inventario_sheet()
                 ws = sh.worksheet(tab_name)
                 headers = ws.row_values(1)
                 all_ids = ws.col_values(1)
@@ -879,7 +913,7 @@ class GoogleService:
         if not self.is_connected or not self.gc:
             return None
         try:
-            sh = self.gc.open(SHEET_INVENTARIO_NAME)
+            sh = self._open_inventario_sheet()
             try:
                 return sh.worksheet(SHEET_SOLICITUDES_TAB)
             except gspread.WorksheetNotFound:
@@ -939,7 +973,7 @@ class GoogleService:
         return sol_dict
 
     def actualizar_solicitud(self, id_solicitud: str, estado: str, observaciones: Optional[str] = None) -> bool:
-        """Actualiza el estado de una solicitud (Aprobada, Comprada, Descartada)."""
+        """Actualiza el estado y observaciones de una solicitud de compra."""
         update_solicitud_local(id_solicitud, estado, observaciones)
 
         ws = self._get_or_create_solicitudes_ws()
@@ -966,7 +1000,7 @@ class GoogleService:
         if not self.is_connected or not self.gc:
             return None
         try:
-            sh = self.gc.open(SHEET_INVENTARIO_NAME)
+            sh = self._open_inventario_sheet()
             try:
                 return sh.worksheet(SHEET_MOVIMIENTOS_TAB)
             except gspread.WorksheetNotFound:
@@ -1032,9 +1066,14 @@ class GoogleService:
         if not self.is_connected or not self.gc:
             return None
 
-        for target_doc in [SHEET_INVENTARIO_NAME, SHEET_ROSTER_NAME]:
+        from backend.config import cargar_configuracion
+        cfg = cargar_configuracion()
+        sheet_inv = cfg.get("spreadsheet_inventario", SHEET_INVENTARIO_NAME)
+        sheet_ros = cfg.get("spreadsheet_roster", SHEET_ROSTER_NAME)
+
+        for target_doc in [sheet_inv, sheet_ros]:
             try:
-                sh = self.gc.open(target_doc)
+                sh = self._open_sheet(target_doc)
                 try:
                     ws = sh.worksheet(SHEET_REGISTRO_GASTOS_TAB)
                     return ws

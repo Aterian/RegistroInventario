@@ -1,33 +1,78 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import sys
 
+block_cipher = None
+base_dir = SPECPATH
+
+added_files = [
+    (os.path.join(base_dir, "frontend", "dist"), "frontend/dist"),
+    (os.path.join(base_dir, "backend", "config.json"), "backend"),
+]
+
+# Agregar credentials.json si existe en backend
+creds_path = os.path.join(base_dir, "backend", "credentials.json")
+if os.path.exists(creds_path):
+    added_files.append((creds_path, "backend"))
+
+hidden_imports = [
+    "clr",
+    "clr_loader",
+    "pythonnet",
+    "webview",
+    "webview.platforms.winforms",
+    "webview.platforms.edgechromium",
+    "pystray",
+    "pystray._win32",
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageDraw",
+    "reportlab",
+    "reportlab.lib",
+    "reportlab.lib.colors",
+    "reportlab.lib.pagesizes",
+    "reportlab.platypus",
+    "reportlab.lib.styles",
+    "gspread",
+    "google.auth",
+    "google.oauth2.service_account",
+    "googleapiclient.discovery",
+    "googleapiclient.http",
+    "sqlite3",
+    "fastapi",
+    "uvicorn",
+    "starlette",
+]
 
 a = Analysis(
-    ['D:/Proyectos Ingeap/Ingeap/Registro de viajes - Inventario/main.py'],
-    pathex=[],
+    [os.path.join(base_dir, 'main.py')],
+    pathex=[base_dir],
     binaries=[],
-    datas=[('D:/Proyectos Ingeap/Ingeap/Registro de viajes - Inventario/frontend/dist', 'frontend/dist'), ('D:/Proyectos Ingeap/Ingeap/Registro de viajes - Inventario/backend/credentials.json', 'backend')],
-    hiddenimports=['uvicorn.logging', 'uvicorn.loops', 'uvicorn.loops.auto', 'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto', 'uvicorn.protocols.websockets', 'uvicorn.protocols.websockets.auto', 'uvicorn.lifespan', 'uvicorn.lifespan.on', 'webview', 'pystray', 'PIL', 'reportlab', 'reportlab.lib', 'reportlab.lib.colors', 'reportlab.lib.pagesizes', 'reportlab.platypus', 'reportlab.lib.styles', 'gspread', 'google.oauth2.service_account', 'fastapi', 'starlette', 'clr_loader', 'pythonnet'],
+    datas=added_files,
+    hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
     excludes=[],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
     noarchive=False,
-    optimize=0,
 )
-pyz = PYZ(a.pure)
+
+pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
 exe = EXE(
     pyz,
     a.scripts,
     a.binaries,
+    a.zipfiles,
     a.datas,
     [],
-    name='Ingeap-Inventario',
+    name='IngeapInventario',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
-    upx=True,
-    upx_exclude=[],
+    upx=False,
     runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,

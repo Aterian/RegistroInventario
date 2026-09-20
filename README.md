@@ -48,47 +48,65 @@ cd ..
 
 ## 🖥️ Modos de Ejecución
 
-### Modo Aplicación de Escritorio (PyWebView + Bandeja Windows)
-Inicia el servidor FastAPI en segundo plano y abre la ventana nativa de escritorio:
+### Modo Aplicación de Escritorio (PyWebView Nativo + Bandeja Windows)
+Inicia la ventana de escritorio conectada nativamente mediante `ApiBridge` (sin servidor HTTP local ni puertos ocupados, con icono en la bandeja del sistema y persistencia en `%LOCALAPPDATA%`):
 ```powershell
 .\.venv\Scripts\python main.py
 ```
 
-### Modo Servidor (Headless / API pura)
-Inicia únicamente el servidor FastAPI escuchando en `0.0.0.0:8000`:
-```powershell
-.\.venv\Scripts\python main.py --server-only
-```
-- Documentación interactiva Swagger: [http://localhost:8000/docs](http://localhost:8000/docs)
-- Estado del sistema: [http://localhost:8000/api/estado](http://localhost:8000/api/estado)
-
 ### Modo Desarrollo Frontend (Vite HMR)
+Para desarrollar el frontend con recarga en caliente:
 ```powershell
+# En terminal 1:
 cd frontend
 npm run dev
+
+# En terminal 2:
+.\.venv\Scripts\python main.py --dev
+```
+
+### Modo Servidor Opcional (Headless / API pura)
+Inicia el servidor FastAPI escuchando en `0.0.0.0:8000` (pensado para contenedores Docker o Cloud Run):
+```powershell
+.\.venv\Scripts\python main.py --server-only
 ```
 
 ---
 
-## 📱 Empaquetado para Android (Capacitor)
+## 📱 Aplicación Móvil para Celular (Android / Capacitor - 24/7 Independiente)
 
-El frontend está configurado para compilar como aplicación móvil nativa para teléfonos Android utilizados por el personal en terreno:
+La aplicación para teléfonos celulares opera de manera **100% independiente** y **no requiere que la computadora de la oficina esté encendida ni conectada**.
 
-1. Compilar los archivos estáticos de React:
-   ```powershell
-   cd frontend
-   npm run build
-   ```
-2. Inicializar y sincronizar el proyecto Android:
-   ```powershell
-   npx cap add android
-   npx cap sync
-   ```
-3. Abrir en Android Studio para generar el APK:
-   ```powershell
-   npx cap open android
-   ```
-4. **Conexión en Terreno/Oficina:** En la app Android, presione el botón de engranaje (⚙️) en la barra superior y configure la IP de la computadora de la oficina (por ejemplo `http://192.168.1.50:8000/api`).
+### 1. Despliegue de la API Cloud en Google Sheets (Cero costo, 24/7)
+1. Abra su libro "Inventario v1.5" en Google Sheets.
+2. Vaya a **Extensiones > Apps Script**.
+3. Pegue el código de [`backend/google_apps_script.js`](./backend/google_apps_script.js).
+4. Haga clic en **Implementar > Nueva implementación > Tipo: Aplicación web**.
+5. Configure:
+   - **Ejecutar como:** "Yo"
+   - **Quién tiene acceso:** "Cualquier usuario"
+6. Haga clic en **Implementar** y copie la URL resultante (`https://script.google.com/macros/s/.../exec`).
+
+### 2. Configuración en el Celular
+1. Abra la aplicación en su teléfono Android.
+2. Toque el icono de engranaje (⚙️) en la barra superior.
+3. Pegue la URL de Google Apps Script copiada anteriormente.
+4. ¡Listo! El celular se comunicará directamente con Google Cloud las 24 horas del día.
+
+> **Resiliencia en Terreno (Modo Offline):** Si el personal se encuentra en zonas rurales o de campaña sin señal celular, la aplicación guarda los catálogos en caché y almacena las salidas y retornos en una cola local. Al recuperar conexión, se sincronizan automáticamente con Google Sheets.
+
+---
+
+## 📦 Compilación del Instalador Autónomo de 1 Archivo (.exe)
+
+Para generar el instalador distribuible para Windows (que instala en `%LOCALAPPDATA%\Ingeap\Inventario`, crea accesos directos en Escritorio y Menú Inicio y configura el inicio con Windows):
+
+Simplemente ejecute:
+```powershell
+.\compilar_instalador.bat
+```
+El archivo final generado se encontrará en:
+`instalador\Instalador_Ingeap_Inventario.exe`
 
 ---
 
@@ -96,5 +114,7 @@ El frontend está configurado para compilar como aplicación móvil nativa para 
 
 - **[`Registro_de_funciones.md`](./Registro_de_funciones.md):** Especificación técnica de todas las funciones y componentes implementados.
 - **[`Registro_de_versiones.md`](./Registro_de_versiones.md):** Historial de versiones y cambios del proyecto.
-- **[`backend/`](./backend):** Código fuente del servidor, modelos de datos, servicios de Google y generador de remitos PDF.
-- **[`frontend/`](./frontend):** Código fuente de la interfaz de usuario en React.
+- **[`backend/api_bridge.py`](./backend/api_bridge.py):** Puente nativo JavaScript-Python para PyWebView.
+- **[`backend/google_apps_script.js`](./backend/google_apps_script.js):** Backend Cloud 24/7 para dispositivos móviles.
+- **[`frontend/src/api.js`](./frontend/src/api.js):** Capa de conexión híbrida inteligente (Desktop nativo + Móvil autónomo).
+

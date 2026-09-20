@@ -148,17 +148,36 @@ Rutas HTTP expuestas a la red local (`0.0.0.0:8000`):
 
 ### 2.1. Cliente API (`src/api.js`)
 - **`getApiBaseUrl()`**: Obtiene la URL base de la API desde `localStorage` o infiere la ruta relativa (`/api`).
-- **`setApiBaseUrl(url)`**: Guarda la IP del backend configurada por el usuario para su uso en la app Android.
-- **`handleResponse(response)`**: Manejador centralizado de errores HTTP y desestructuración JSON.
-- **`api.getEstado()`**: Llama a `GET /api/estado`.
-- **`api.getCatalogos(recargar)`**: Llama a `GET /api/catalogos`.
-- **`api.getViajesActivos()`**: Llama a `GET /api/viajes/activos`.
-- **`api.getViajeDetalle(idViaje)`**: Llama a `GET /api/viajes/:id`.
-- **`api.registrarSalida(data)`**: Llama a `POST /api/viajes/salida`.
-- **`api.registrarRetorno(data)`**: Llama a `POST /api/viajes/retorno`.
-- **`api.getPdfUrl(idViaje)`**: Genera la URL directa de descarga del remito PDF.
+- **`setApiBaseUrl(url)`**: Guarda la URL del backend personalizada por el usuario.
+- **`isDesktopApp()`**: Detecta si la aplicación se ejecuta dentro del contenedor de escritorio nativo PyWebView (`window.pywebview.api`).
+- **`getGasUrl()` / `setGasUrl(url)`**: Lee y guarda la URL de la Web App de Google Apps Script para conexión móvil independiente 24/7.
+- **`getOfflineQueue()` / `addOfflineQueue(item)` / `syncOfflineQueue()`**: Administra la cola local de salidas y retornos realizados en terreno sin cobertura celular, sincronizándolos automáticamente al detectar conexión.
+- **`api.getEstado()`**: Consulta el estado del sistema mediante `ApiBridge` en PC o Google Apps Script en móvil.
+- **`api.getCatalogos(recargar)`**: Provee el catálogo completo, usando caché en memoria, caché local en teléfono o consulta remota.
+- **`api.getViajesActivos()` / `api.getTodosLosViajes()` / `api.getViajeDetalle(idViaje)`**: Consulta de viajes activos e histórico.
+- **`api.registrarSalida(data)`**: Registra el despacho multiproyecto de salida (vía Python nativo o Web App Google Cloud).
+- **`api.registrarRetorno(data)`**: Registra la devolución con cálculo de prorrateos.
+- **`api.abrirRemito(idViaje)`**: Abre el remito en el visor PDF del sistema operativo (en PC) o en pestaña nueva (en móvil/web).
+- **`api.minimizar()` / `api.verificarActualizacion()` / `api.aplicarActualizacion()`**: Control nativo de ventana y auto-actualizador para escritorio.
 
-### 2.2. Componentes de Interfaz de Usuario
+### 2.2. Puente Nativo de Escritorio (`backend/api_bridge.py`)
+Módulo que expone métodos de negocio directamente a JavaScript vía `window.pywebview.api`, prescindiendo de puertos de red:
+- **`ApiBridge.get_estado()`**: Estado de Google Sheets, Drive y base de datos local SQLite.
+- **`ApiBridge.get_catalogos(recargar)`**: Lectura unificada de las 8 pestañas y nóminas de proyectos/usuarios.
+- **`ApiBridge.registrar_salida(data)` / `registrar_retorno(data)`**: Procesamiento de viajes y cálculo de costos.
+- **`ApiBridge.generar_remito_pdf(id_viaje)` / `abrir_remito_pdf(id_viaje)`**: Generación con ReportLab y apertura con la app predeterminada de Windows.
+- **`ApiBridge.probar_conexion_sheets()` / `guardar_config_sheets(config)`**: Gestión de libros y credenciales persistentes en AppData.
+- **`ApiBridge.verificar_actualizacion()` / `aplicar_actualizacion(url)`**: Detección de versiones en GitHub Releases y reemplazo del ejecutable en caliente.
+- **`ApiBridge.minimizar_a_bandeja()` / `redimensionar_ventana()` / `maximizar_ventana()`**: Control dinámico de ventana.
+
+### 2.3. Servicio Web App Cloud para Celulares (`backend/google_apps_script.js`)
+API serverless alojada 24/7 en Google Cloud para la app móvil Android:
+- **`doGet(e)` / `doPost(e)`**: Manejo de peticiones HTTP REST con formato JSON y soporte CORS.
+- **`getCatalogos()`**: Lectura directa de las 8 hojas de catálogo y listas de personal.
+- **`uploadSignatureToDrive(base64, prefix)`**: Creación de archivo PNG en Google Drive con permisos públicos de lectura.
+- **`registrarSalida(data)` / `registrarRetorno(data)`**: Inserción y actualización atómica en `registro_gastos` y `movimientos_stock`.
+
+### 2.4. Componentes de Interfaz de Usuario
 - **`App` (`src/App.jsx`)**: Componente raíz con control de pestañas, carga en paralelo, sondeo automático cada 30 segundos y notificaciones Toast flotantes.
 - **`Navbar` (`src/components/Navbar.jsx`)**: Barra superior con isotipo Ingeap, indicador de estado de red, conmutador de tema y accesos rápidos.
 - **`Dashboard` (`src/components/Dashboard.jsx`)**: Vista de métricas, buscador en tiempo real de viajes en terreno, tarjetas de viaje y enlaces directos a remitos PDF.
@@ -166,5 +185,6 @@ Rutas HTTP expuestas a la red local (`0.0.0.0:8000`):
 - **`RetornoModal` (`src/components/RetornoModal.jsx`)**: Modal de liquidación con selector de modo equitativo o por sliders porcentuales, validación matemática de suma 100% y captura de firma de retorno.
 - **`CatalogViewer` (`src/components/CatalogViewer.jsx`)**: Explorador completo de las 8 categorías del inventario con previsualización de imágenes, números de serie y códigos internos.
 - **`SignaturePadModal` (`src/components/SignaturePadModal.jsx`)**: Canvas interactivo compatible con pantallas táctiles móviles y mouse de PC, con funciones de limpieza y exportación a PNG Base64.
-- **`SettingsModal` (`src/components/SettingsModal.jsx`)**: Diálogo de configuración para ajustar la IP del servidor backend en dispositivos Android conectados a la red Wi-Fi local.
+- **`SettingsModal` (`src/components/SettingsModal.jsx`)**: Diálogo inteligente con detección de entorno (Modo Escritorio Nativo vs Modo Móvil Autónomo 24/7), configuración de Google Apps Script y estado de cola offline.
 - **`ThemeProvider` / `useTheme` (`src/context/ThemeContext.jsx`)**: Proveedor de contexto para alternar fluidamente entre tema claro y oscuro con persistencia en `localStorage`.
+

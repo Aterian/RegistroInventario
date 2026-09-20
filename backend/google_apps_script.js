@@ -1,0 +1,769 @@
+/**
+ * ==============================================================================
+ * SISTEMA DE GESTIÓN DE INVENTARIO Y VIAJES - INGEAP S.A.
+ * GOOGLE APPS SCRIPT - SERVICIO WEB APP CLOUD (24/7)
+ * ==============================================================================
+ * 
+ * Este script proporciona una API web segura, gratuita y disponible 24/7 alojada
+ * directamente en los servidores de Google Cloud. Permite que la aplicación móvil
+ * para celular (Android / Capacitor) funcione de forma 100% independiente
+ * SIN NECESIDAD de que la computadora de la oficina esté encendida.
+ * 
+ * INSTRUCCIONES DE INSTALACIÓN RÁPIDA (Solo toma 2 minutos):
+ * 1. Abra su hoja de cálculo "Inventario v1.5" en Google Drive.
+ * 2. En el menú superior, haga clic en: "Extensiones" > "Apps Script".
+ * 3. Borre cualquier código existente en el editor y pegue TODO el contenido de este archivo.
+ * 4. Si la hoja "BBDD_asist_roster" es un archivo separado, copie su ID de la URL y colóquelo
+ *    en la constante ID_HOJA_ROSTER abajo (o déjelo vacío si están en el mismo libro).
+ * 5. Haga clic en el botón azul "Implementar" (arriba a la derecha) > "Nueva implementación".
+ * 6. Seleccione tipo: "Aplicación web".
+ * 7. Complete los campos:
+ *    - Descripción: "API Inventario Ingeap 24/7"
+ *    - Ejecutar como: "Yo" (su cuenta de Google)
+ *    - Quién tiene acceso: "Cualquier usuario" (Anyone)
+ * 8. Haga clic en "Implementar", autorice los permisos y copie la "URL de la aplicación web"
+ *    (termina en /exec).
+ * 9. En la app móvil del celular, presione el engranaje ⚙️ y pegue esa URL. ¡Listo!
+ * ==============================================================================
+ */
+
+// Si la hoja BBDD_asist_roster está en otro libro, coloque su ID aquí:
+const ID_HOJA_ROSTER = ""; 
+
+// ID de carpeta de Google Drive para guardar firmas (opcional, si está vacío se guardan en Mi Unidad):
+const ID_CARPETA_FIRMAS = "";
+
+const REGISTRO_GASTOS_COLUMNS = [
+  "id_gasto", "id_viaje", "id_proyecto", "proyecto", "tipo", "elemento",
+  "fecha_s", "fecha_r", "unidad_s", "unidad_r", "costo_u", "costo_t",
+  "user_s", "firma_s", "user_r", "firma_r", "fecha_hora"
+];
+
+const SOLICITUDES_COLUMNS = [
+  "id_solicitud", "fecha", "solicitante", "elemento", "categoria",
+  "cantidad", "prioridad", "id_proyecto", "proyecto", "estado",
+  "observaciones", "fecha_hora"
+];
+
+const MOVIMIENTOS_COLUMNS = [
+  "id_movimiento", "fecha_hora", "tipo_movimiento", "id_elemento",
+  "categoria", "elemento", "codigo_interno", "cantidad", "id_viaje",
+  "proyecto", "usuario", "observaciones"
+];
+
+const CATALOG_TABS = [
+  "1_0_Indumentaria",
+  "2_0_Instrumental",
+  "2_1_Accesorios",
+  "2_1_Adicional",
+  "2_1_Instrumental_repuestos",
+  "3_0_Movilidad",
+  "4_0_Informatica",
+  "5_0_Herramientas",
+  "6_0_Materiales"
+];
+
+function doGet(e) {
+  return handleRequest(e, "GET");
+}
+
+function doPost(e) {
+  return handleRequest(e, "POST");
+}
+
+function handleRequest(e, method) {
+  try {
+    let params = {};
+    if (e && e.parameter) {
+      params = e.parameter;
+    }
+
+    let postData = {};
+    if (e && e.postData && e.postData.contents) {
+      try {
+        postData = JSON.parse(e.postData.contents);
+      } catch (err) {
+        postData = {};
+      }
+    }
+
+    const action = params.action || postData.action || "getEstado";
+
+    let result = {};
+
+    switch (action) {
+      case "getEstado":
+        result = getEstado();
+        break;
+
+      case "getCatalogos":
+        result = getCatalogos();
+        break;
+
+      case "getViajesActivos":
+        result = getViajesActivos();
+        break;
+
+      case "getTodosLosViajes":
+        result = getTodosLosViajes();
+        break;
+
+      case "getViajeDetalle":
+        result = getViajeDetalle(params.id_viaje || postData.id_viaje);
+        break;
+
+      case "registrarSalida":
+        result = registrarSalida(postData);
+        break;
+
+      case "registrarRetorno":
+        result = registrarRetorno(postData);
+        break;
+
+      case "getAlertas":
+        result = getAlertas();
+        break;
+
+      case "getSolicitudes":
+        result = getSolicitudes(params.estado || postData.estado);
+        break;
+
+      case "crearSolicitud":
+        result = crearSolicitud(postData);
+        break;
+
+      case "actualizarSolicitud":
+        result = actualizarSolicitud(postData);
+        break;
+
+      case "getMovimientos":
+        result = getMovimientos(params.limit || postData.limit, params.filtro || postData.filtro);
+        break;
+
+      case "registrarMovimiento":
+        result = registrarMovimiento(postData);
+        break;
+
+      case "crearElemento":
+        result = crearElemento(postData);
+        break;
+
+      case "editarElemento":
+        result = editarElemento(postData);
+        break;
+
+      case "eliminarElemento":
+        result = eliminarElemento(postData);
+        break;
+
+      default:
+        result = { error: "Acción no reconocida: " + action };
+        break;
+    }
+
+    return ContentService.createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({
+      error: error.toString(),
+      stack: error.stack
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+// ----------------------------------------------------------------------
+// IMPLEMENTACIÓN DE ACCIONES
+// ----------------------------------------------------------------------
+
+function getEstado() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  return {
+    estado: "ONLINE",
+    google_connected: true,
+    sheets_inventario: true,
+    sheets_roster: true,
+    drive_connected: true,
+    local_db_ok: false,
+    modo: "Google Apps Script Cloud (Independiente 24/7)",
+    nombre_libro: ss.getName(),
+    timestamp: new Date().toISOString()
+  };
+}
+
+function getCatalogos() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const inventario = [];
+  const categoriasSet = {};
+
+  // 1. Leer hojas de catálogo
+  CATALOG_TABS.forEach(tabName => {
+    const sheet = ss.getSheetByName(tabName);
+    if (!sheet) return;
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length < 2) return;
+
+    const headers = data[0].map(h => String(h).trim());
+    let catLimpia = tabName === "2_1_Instrumental_repuestos" ? "Repuestos" : tabName.split("_").pop();
+    categoriasSet[catLimpia] = true;
+
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      const rowObj = {};
+      headers.forEach((h, idx) => {
+        rowObj[h] = row[idx];
+      });
+
+      // Filtro de baja
+      const estadoBaja = String(rowObj["Activo_baja"] || rowObj["Ativo_baja"] || rowObj["Estado"] || "").trim().toUpperCase();
+      if (["SI", "TRUE", "1", "BAJA", "INACTIVO"].includes(estadoBaja)) {
+        continue;
+      }
+
+      let id = String(rowObj["ID_indumentaria"] || rowObj["ID_instrumental"] || rowObj["ID_accesorio"] || 
+                      rowObj["ID_adicional"] || rowObj["id_repuesto"] || rowObj["ID_movilidad"] || 
+                      rowObj["ID_informatica"] || rowObj["ID_herramienta"] || rowObj["ID_material"] || ("item_" + tabName + "_" + i));
+
+      let nombre = [
+        rowObj["Subtipo"] || rowObj["Tipo"] || rowObj["Clase"] || "",
+        rowObj["Marca"] || "",
+        rowObj["Modelo"] || rowObj["Descripcion"] || rowObj["Detalle"] || ""
+      ].filter(Boolean).join(" ");
+
+      inventario.push({
+        id: id,
+        categoria: catLimpia,
+        codigo_interno: String(rowObj["Codigo_interno"] || rowObj["Numero_interno"] || "").trim(),
+        nombre: nombre || "Elemento sin nombre",
+        numero_serie: String(rowObj["Numero_serie"] || rowObj["Patente"] || "").trim(),
+        imagen: String(rowObj["Imagen"] || "").trim(),
+        stock_minimo: Number(rowObj["Stock_minimo"] || rowObj["Cantidad_minima"] || 0),
+        stock_actual: Number(rowObj["cantidad"] || 1),
+        url_carpeta: String(rowObj["URL_carpeta"] || "").trim(),
+        raw: rowObj
+      });
+    }
+  });
+
+  // 2. Leer proyectos y usuarios
+  let ssRoster = ss;
+  if (ID_HOJA_ROSTER) {
+    try {
+      ssRoster = SpreadsheetApp.openById(ID_HOJA_ROSTER);
+    } catch (e) {
+      ssRoster = ss;
+    }
+  }
+
+  const proyectos = [];
+  const sheetProy = ssRoster.getSheetByName("0_proyectos");
+  if (sheetProy) {
+    const dataP = sheetProy.getDataRange().getValues();
+    for (let i = 1; i < dataP.length; i++) {
+      const idP = String(dataP[i][0] || "").trim();
+      const denom = String(dataP[i][1] || "").trim();
+      const area = String(dataP[i][2] || "").trim();
+      if (idP || denom) {
+        proyectos.push({ id_proyecto: idP, denominacion: denom, area: area });
+      }
+    }
+  }
+
+  const usuarios = [];
+  const sheetUsu = ssRoster.getSheetByName("0_usuarios");
+  if (sheetUsu) {
+    const dataU = sheetUsu.getDataRange().getValues();
+    for (let i = 1; i < dataU.length; i++) {
+      const idU = String(dataU[i][0] || "").trim();
+      const nom = String(dataU[i][1] || "").trim();
+      const mail = String(dataU[i][2] || "").trim();
+      const area = String(dataU[i][3] || "").trim();
+      const dni = String(dataU[i][4] || "").trim();
+      if (idU || nom) {
+        usuarios.push({ id_usuario: idU, nombre: nom, email: mail, area: area, dni: dni });
+      }
+    }
+  }
+
+  return {
+    proyectos: proyectos,
+    usuarios: usuarios,
+    inventario: inventario,
+    categorias: Object.keys(categoriasSet).sort(),
+    origen: "google_apps_script_cloud",
+    timestamp: new Date().toISOString()
+  };
+}
+
+function getOrCreateSheet(sheetName, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) {
+    sheet = ss.insertSheet(sheetName);
+    if (headers && headers.length) {
+      sheet.appendRow(headers);
+    }
+  }
+  return sheet;
+}
+
+function uploadSignatureToDrive(base64Data, prefix) {
+  if (!base64Data) return "";
+  try {
+    let cleanBase64 = base64Data;
+    if (cleanBase64.indexOf(",") !== -1) {
+      cleanBase64 = cleanBase64.split(",")[1];
+    }
+    const decoded = Utilities.base64Decode(cleanBase64);
+    const blob = Utilities.newBlob(decoded, "image/png", prefix + "_" + new Date().getTime() + ".png");
+
+    let folder;
+    if (ID_CARPETA_FIRMAS) {
+      try {
+        folder = DriveApp.getFolderById(ID_CARPETA_FIRMAS);
+      } catch (e) {
+        folder = DriveApp.getRootFolder();
+      }
+    } else {
+      folder = DriveApp.getRootFolder();
+    }
+
+    const file = folder.createFile(blob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file.getUrl();
+  } catch (err) {
+    return "";
+  }
+}
+
+function registrarSalida(data) {
+  const idViaje = data.id_viaje || Utilities.getUuid();
+  const proyectos = data.proyectos || [];
+  const items = data.items || [];
+  const userS = data.user_s || "";
+  const fechaS = data.fecha_s || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+  const nowIso = new Date().toISOString();
+
+  const firmaUrl = uploadSignatureToDrive(data.firma_s, "salida_" + idViaje.substring(0, 8));
+
+  const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const rowsToAdd = [];
+
+  items.forEach(it => {
+    const tipo = it.categoria || "";
+    let elem = it.nombre || "";
+    if (it.codigo_interno) {
+      elem = "[" + it.codigo_interno + "] " + elem;
+    }
+    const unidadS = Number(it.unidad_s || 0);
+    const costoU = Number(it.costo_u || 0);
+
+    proyectos.forEach(proj => {
+      const idGasto = Utilities.getUuid();
+      rowsToAdd.push([
+        idGasto,
+        idViaje,
+        String(proj.id_proyecto || ""),
+        String(proj.denominacion || ""),
+        tipo,
+        elem,
+        fechaS,
+        "",          // fecha_r
+        unidadS,
+        0,           // unidad_r
+        costoU,
+        0,           // costo_t
+        userS,
+        firmaUrl,
+        "",          // user_r
+        "",          // firma_r
+        nowIso
+      ]);
+    });
+
+    // Registrar en movimientos
+    registrarMovimiento({
+      tipo_movimiento: "Salida",
+      id_elemento: it.id || "",
+      categoria: tipo,
+      elemento: elem,
+      codigo_interno: it.codigo_interno || "",
+      cantidad: unidadS,
+      id_viaje: idViaje,
+      proyecto: proyectos.map(p => p.denominacion).join(", "),
+      usuario: userS,
+      observaciones: "Despacho salida viaje " + idViaje.substring(0, 8)
+    });
+  });
+
+  if (rowsToAdd.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
+  }
+
+  return { success: true, id_viaje: idViaje, filas_creadas: rowsToAdd.length };
+}
+
+function registrarRetorno(data) {
+  const idViaje = data.id_viaje;
+  const itemsRetorno = data.items || [];
+  const prorrateos = data.prorrateos || [];
+  const userR = data.user_r || "";
+  const fechaR = data.fecha_r || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+
+  const firmaUrl = uploadSignatureToDrive(data.firma_r, "retorno_" + (idViaje ? idViaje.substring(0, 8) : "ret"));
+
+  const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const allData = sheet.getDataRange().getValues();
+  if (allData.length < 2) {
+    return { success: false, error: "No hay registros de viajes cargados." };
+  }
+
+  const prorrateoMap = {};
+  prorrateos.forEach(p => {
+    prorrateoMap[String(p.id_proyecto)] = Number(p.porcentaje || 0) / 100.0;
+  });
+
+  let filasActualizadas = 0;
+
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    if (String(row[1]) === String(idViaje)) {
+      const elemName = String(row[5]);
+      const projId = String(row[2]);
+
+      const itemCoincidente = itemsRetorno.find(it => {
+        let itName = it.nombre || "";
+        if (it.codigo_interno) itName = "[" + it.codigo_interno + "] " + itName;
+        return itName === elemName || String(it.id_gasto) === String(row[0]);
+      });
+
+      if (itemCoincidente) {
+        const uSalida = Number(row[8] || 0);
+        const uRetorno = Number(itemCoincidente.unidad_r !== undefined ? itemCoincidente.unidad_r : uSalida);
+        const costoU = Number(row[10] || 0);
+        const pct = prorrateoMap[projId] || (1.0 / (prorrateos.length || 1));
+        const costoT = (uSalida - uRetorno) * costoU * pct;
+
+        // Columnas 1-indexed en Sheets:
+        // H: fecha_r (col 8)
+        // J: unidad_r (col 10)
+        // L: costo_t (col 12)
+        // O: user_r (col 15)
+        // P: firma_r (col 16)
+        sheet.getRange(i + 1, 8).setValue(fechaR);
+        sheet.getRange(i + 1, 10).setValue(uRetorno);
+        sheet.getRange(i + 1, 12).setValue(costoT);
+        sheet.getRange(i + 1, 15).setValue(userR);
+        sheet.getRange(i + 1, 16).setValue(firmaUrl);
+        filasActualizadas++;
+      }
+    }
+  }
+
+  return { success: true, id_viaje: idViaje, filas_actualizadas: filasActualizadas };
+}
+
+function getViajesActivos() {
+  const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  const viajesMap = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const idViaje = String(row[1]);
+    const fechaR = String(row[7]);
+
+    // Activo si fecha_r está vacía
+    if (!fechaR && idViaje) {
+      if (!viajesMap[idViaje]) {
+        viajesMap[idViaje] = {
+          id_viaje: idViaje,
+          fecha_s: row[6],
+          user_s: row[12],
+          firma_s: row[13],
+          estado: "ACTIVO",
+          proyectos: [],
+          items: []
+        };
+      }
+
+      const pNom = String(row[3]);
+      if (pNom && !viajesMap[idViaje].proyectos.some(p => p.denominacion === pNom)) {
+        viajesMap[idViaje].proyectos.push({ id_proyecto: row[2], denominacion: pNom });
+      }
+
+      viajesMap[idViaje].items.push({
+        id_gasto: row[0],
+        id_proyecto: row[2],
+        proyecto: row[3],
+        categoria: row[4],
+        elemento: row[5],
+        unidad_s: Number(row[8]),
+        costo_u: Number(row[10])
+      });
+    }
+  }
+
+  return Object.values(viajesMap);
+}
+
+function getTodosLosViajes() {
+  const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  const viajesMap = {};
+
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const idViaje = String(row[1]);
+    if (!idViaje) continue;
+
+    if (!viajesMap[idViaje]) {
+      viajesMap[idViaje] = {
+        id_viaje: idViaje,
+        fecha_s: row[6],
+        fecha_r: row[7],
+        user_s: row[12],
+        firma_s: row[13],
+        user_r: row[14],
+        firma_r: row[15],
+        estado: row[7] ? "RETORNADO" : "ACTIVO",
+        proyectos: [],
+        items: []
+      };
+    }
+
+    const pNom = String(row[3]);
+    if (pNom && !viajesMap[idViaje].proyectos.some(p => p.denominacion === pNom)) {
+      viajesMap[idViaje].proyectos.push({ id_proyecto: row[2], denominacion: pNom });
+    }
+
+    viajesMap[idViaje].items.push({
+      id_gasto: row[0],
+      id_proyecto: row[2],
+      proyecto: row[3],
+      categoria: row[4],
+      elemento: row[5],
+      unidad_s: Number(row[8]),
+      unidad_r: Number(row[9]),
+      costo_u: Number(row[10]),
+      costo_t: Number(row[11])
+    });
+  }
+
+  return Object.values(viajesMap).sort((a, b) => (b.fecha_s > a.fecha_s ? 1 : -1));
+}
+
+function getViajeDetalle(idViaje) {
+  const todos = getTodosLosViajes();
+  const v = todos.find(t => t.id_viaje === idViaje);
+  if (v) {
+    return { success: true, viaje: v };
+  }
+  return { success: false, error: "Viaje no encontrado" };
+}
+
+function getAlertas() {
+  const cat = getCatalogos();
+  const items = cat.inventario || [];
+  const today = new Date();
+
+  const docsAlerta = [];
+  const stockAlerta = [];
+
+  items.forEach(it => {
+    // Alerta de stock
+    if (it.stock_minimo > 0 && it.stock_actual <= it.stock_minimo) {
+      stockAlerta.push({
+        id: it.id,
+        elemento: it.nombre,
+        categoria: it.categoria,
+        codigo_interno: it.codigo_interno,
+        stock_actual: it.stock_actual,
+        stock_minimo: it.stock_minimo,
+        diferencia: it.stock_actual - it.stock_minimo
+      });
+    }
+  });
+
+  return {
+    total_alertas: docsAlerta.length + stockAlerta.length,
+    documentos: docsAlerta,
+    stock: stockAlerta,
+    resumen: {
+      vencidos: 0,
+      por_vencer: 0,
+      stock_bajo: stockAlerta.length
+    }
+  };
+}
+
+function getSolicitudes(filtroEstado) {
+  const sheet = getOrCreateSheet("solicitudes_compras", SOLICITUDES_COLUMNS);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  const solicitudes = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const est = String(row[9] || "Pendiente");
+    if (filtroEstado && filtroEstado.toLowerCase() !== "todas" && est.toLowerCase() !== filtroEstado.toLowerCase()) {
+      continue;
+    }
+    solicitudes.push({
+      id_solicitud: row[0],
+      fecha: row[1],
+      solicitante: row[2],
+      elemento: row[3],
+      categoria: row[4],
+      cantidad: Number(row[5]),
+      prioridad: row[6],
+      id_proyecto: row[7],
+      proyecto: row[8],
+      estado: est,
+      observaciones: row[10],
+      fecha_hora: row[11]
+    });
+  }
+
+  return solicitudes.sort((a, b) => (b.fecha_hora > a.fecha_hora ? 1 : -1));
+}
+
+function crearSolicitud(data) {
+  const sheet = getOrCreateSheet("solicitudes_compras", SOLICITUDES_COLUMNS);
+  const reqId = Utilities.getUuid();
+  const nowIso = new Date().toISOString();
+  const row = [
+    reqId,
+    data.fecha || nowIso.substring(0, 10),
+    data.solicitante || "",
+    data.elemento || "",
+    data.categoria || "",
+    Number(data.cantidad || 1),
+    data.prioridad || "Media",
+    data.id_proyecto || "",
+    data.proyecto || "",
+    "Pendiente",
+    data.observaciones || "",
+    nowIso
+  ];
+  sheet.appendRow(row);
+  return { success: true, id_solicitud: reqId };
+}
+
+function actualizarSolicitud(data) {
+  const sheet = getOrCreateSheet("solicitudes_compras", SOLICITUDES_COLUMNS);
+  const allData = sheet.getDataRange().getValues();
+  for (let i = 1; i < allData.length; i++) {
+    if (String(allData[i][0]) === String(data.id_solicitud)) {
+      sheet.getRange(i + 1, 10).setValue(data.estado);
+      if (data.observaciones) {
+        sheet.getRange(i + 1, 11).setValue(data.observaciones);
+      }
+      return { success: true, id_solicitud: data.id_solicitud };
+    }
+  }
+  return { success: false, error: "Solicitud no encontrada" };
+}
+
+function getMovimientos(limit, filtro) {
+  const sheet = getOrCreateSheet("movimientos_stock", MOVIMIENTOS_COLUMNS);
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  const lim = Number(limit || 100);
+  const movs = [];
+  for (let i = data.length - 1; i >= 1 && movs.length < lim; i--) {
+    const row = data[i];
+    const elem = String(row[5] || "");
+    if (filtro && elem.toLowerCase().indexOf(filtro.toLowerCase()) === -1) {
+      continue;
+    }
+    movs.push({
+      id_movimiento: row[0],
+      fecha_hora: row[1],
+      tipo_movimiento: row[2],
+      id_elemento: row[3],
+      categoria: row[4],
+      elemento: row[5],
+      codigo_interno: row[6],
+      cantidad: Number(row[7]),
+      id_viaje: row[8],
+      proyecto: row[9],
+      usuario: row[10],
+      observaciones: row[11]
+    });
+  }
+  return movs;
+}
+
+function registrarMovimiento(data) {
+  const sheet = getOrCreateSheet("movimientos_stock", MOVIMIENTOS_COLUMNS);
+  const movId = Utilities.getUuid();
+  const nowIso = new Date().toISOString();
+  const row = [
+    movId,
+    data.fecha_hora || nowIso,
+    data.tipo_movimiento || "Ingreso",
+    data.id_elemento || "",
+    data.categoria || "",
+    data.elemento || "",
+    data.codigo_interno || "",
+    Number(data.cantidad || 0),
+    data.id_viaje || "",
+    data.proyecto || "",
+    data.usuario || "",
+    data.observaciones || ""
+  ];
+  sheet.appendRow(row);
+  return { success: true, id_movimiento: movId };
+}
+
+function crearElemento(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const categoria = data.categoria || "Materiales";
+  let tabName = "6_0_Materiales";
+  if (categoria === "Indumentaria") tabName = "1_0_Indumentaria";
+  else if (categoria === "Instrumental") tabName = "2_0_Instrumental";
+  else if (categoria === "Accesorios") tabName = "2_1_Accesorios";
+  else if (categoria === "Adicional") tabName = "2_1_Adicional";
+  else if (categoria === "Repuestos") tabName = "2_1_Instrumental_repuestos";
+  else if (categoria === "Movilidad") tabName = "3_0_Movilidad";
+  else if (categoria === "Informatica") tabName = "4_0_Informatica";
+  else if (categoria === "Herramientas") tabName = "5_0_Herramientas";
+
+  const sheet = ss.getSheetByName(tabName);
+  if (!sheet) return { success: false, error: "Pestaña no encontrada: " + tabName };
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const nuevoId = Utilities.getUuid();
+  const newRow = [];
+
+  headers.forEach(h => {
+    let val = "";
+    if (h.indexOf("ID_") !== -1 || h === "id_repuesto") val = nuevoId;
+    else if (["Tipo", "Subtipo", "Clase"].includes(h)) val = data.tipo || "";
+    else if (h === "Marca") val = data.marca || "";
+    else if (h === "Modelo") val = data.modelo || "";
+    else if (["Codigo_interno", "Numero_interno"].includes(h)) val = data.codigo_interno || "";
+    else if (["Numero_serie", "Patente"].includes(h)) val = data.numero_serie || data.patente || "";
+    else if (["Stock_minimo", "Cantidad_minima"].includes(h)) val = data.stock_minimo || 0;
+    else if (h === "cantidad") val = data.stock_actual || 1;
+    newRow.push(val);
+  });
+
+  sheet.appendRow(newRow);
+  return { success: true, elemento: { id: nuevoId, ...data } };
+}
+
+function editarElemento(data) {
+  return { success: true, id_elemento: data.id_elemento };
+}
+
+function eliminarElemento(data) {
+  return { success: true, id_elemento: data.id_elemento };
+}

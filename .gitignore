@@ -39,6 +39,8 @@ data/firmas/*
 !data/firmas/.gitkeep
 data/remitos_pdf/*
 !data/remitos_pdf/.gitkeep
+*.log
+data/*.log
 
 # OS / Editor files
 .DS_Store

@@ -5,20 +5,31 @@ import socket
 import threading
 import argparse
 import logging
+import subprocess
 from pathlib import Path
 
-import uvicorn
+import webview
+import pystray
 from PIL import Image, ImageDraw
 
-from backend.config import SERVER_HOST, SERVER_PORT, COLOR_PRIMARY_RED, PROJECT_ROOT, STATIC_DIR
+from backend.config import (
+    DATA_DIR,
+    STATIC_DIR,
+    COLOR_PRIMARY_RED,
+    recurso_path,
+    IS_FROZEN,
+    cargar_configuracion
+)
+from backend.database import init_db
+from backend.api_bridge import ApiBridge, APP_VERSION
+from backend.google_service import google_service
 
-# 1. Manejo seguro de flujos en entornos empaquetados (--windowed / sin consola)
-IS_FROZEN = getattr(sys, 'frozen', False)
-LOG_FILE = PROJECT_ROOT / "data" / "app_runtime.log"
+# 1. Manejo seguro de logs y flujos en entornos sin consola
+LOG_FILE = DATA_DIR / "app_runtime.log"
 
 class SafeLogWriter:
     def __init__(self, target_path):
-        self.target_path = target_path
+        self.target_path = Path(target_path)
         self._file = None
 
     def _get_file(self):
@@ -54,7 +65,6 @@ if sys.stdout is None or sys.stderr is None:
     if sys.stderr is None:
         sys.stderr = safe_writer
 
-# 2. Configurar logging tanto a consola (si existe) como a archivo permanente
 handlers = []
 if sys.stderr is not None and not isinstance(sys.stderr, SafeLogWriter):
     handlers.append(logging.StreamHandler(sys.stderr))
@@ -71,156 +81,216 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ingeap.main")
 
-def is_port_in_use(port: int, host: str = "127.0.0.1") -> bool:
-    """Verifica si el puerto ya está ocupado."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        return s.connect_ex((host, port)) == 0
+_mutex_instancia = None
 
-def wait_for_server(port: int, host: str = "127.0.0.1", timeout: float = 35.0) -> bool:
-    """Espera activamente a que el servidor FastAPI esté escuchando y responda conexiones."""
-    logger.info(f"Comprobando disponibilidad del backend en {host}:{port}...")
-    start_time = time.time()
-    while time.time() - start_time < timeout:
+def asegurar_instancia_unica():
+    """
+    Garantiza una única instancia activa en Windows utilizando un Mutex nombrado.
+    Si ya hay otra instancia, restaura su ventana y finaliza el proceso duplicado.
+    """
+    global _mutex_instancia
+    if sys.platform != "win32":
+        return
+
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        ERROR_ALREADY_EXISTS = 183
+        MUTEX_NAME = "Local\\IngeapInventario_App_SingleInstance_Mutex"
+
+        _mutex_instancia = kernel32.CreateMutexW(None, False, MUTEX_NAME)
+        ultimo_error = kernel32.GetLastError()
+
+        if ultimo_error == ERROR_ALREADY_EXISTS:
+            try:
+                user32 = ctypes.windll.user32
+                hwnd = user32.FindWindowW(None, "Ingeap - Gestión de Inventario y Viajes")
+                if hwnd:
+                    user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    user32.SetForegroundWindow(hwnd)
+            except Exception:
+                pass
+            sys.exit(0)
+    except Exception as e:
+        logger.warning(f"[InstanciaUnica] Aviso verificando mutex: {e}")
+
+def asegurar_inicio_automatico():
+    """Registra la aplicación en el Registro de Windows (HKCU/Run) si está congelada en .exe."""
+    if getattr(sys, "frozen", False) and sys.platform == "win32":
         try:
-            with socket.create_connection((host, port), timeout=0.5):
-                logger.info(f"Backend activo y respondiendo en {host}:{port} tras {time.time() - start_time:.2f}s.")
-                return True
-        except (OSError, ConnectionRefusedError):
-            time.sleep(0.25)
-    logger.error(f"Tiempo de espera agotado ({timeout}s) esperando al servidor en {host}:{port}.")
-    return False
+            import winreg
+            exe_path = sys.executable
+            key = winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Run",
+                0,
+                winreg.KEY_SET_VALUE
+            )
+            winreg.SetValueEx(key, "IngeapInventario", 0, winreg.REG_SZ, f'"{exe_path}"')
+            winreg.CloseKey(key)
+        except Exception as e:
+            logger.warning(f"[AutoStart] Error registrando en Windows Run: {e}")
 
-def create_tray_image():
-    """Genera un icono en memoria para la bandeja de sistema."""
+def obtener_icono_tray():
+    """Genera o carga el icono corporativo rojo para la bandeja del sistema."""
+    ruta_assets = recurso_path("backend/assets")
+    for f_nom in ["icon.png", "app.ico"]:
+        cand = ruta_assets / f_nom
+        if cand.exists():
+            try:
+                return Image.open(str(cand))
+            except Exception:
+                pass
+
+    # Icono en memoria con estilo corporativo Ingeap (#cc3333)
     img = Image.new("RGBA", (64, 64), color=(0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Dibujar circulo/cuadrado con color rojo corporativo #cc3333
-    draw.rounded_rectangle([(4, 4), (60, 60)], radius=12, fill=COLOR_PRIMARY_RED)
-    # Dibujar letra 'I' blanca
+    draw.rounded_rectangle([(4, 4), (60, 60)], radius=14, fill=COLOR_PRIMARY_RED)
+    # Letra I estilizada
     draw.rectangle([(26, 16), (38, 48)], fill="white")
     draw.rectangle([(18, 16), (46, 22)], fill="white")
     draw.rectangle([(18, 42), (46, 48)], fill="white")
     return img
 
-def run_uvicorn():
-    """Ejecuta el servidor FastAPI con Uvicorn de forma segura en un hilo."""
-    logger.info(f"Iniciando servidor FastAPI en {SERVER_HOST}:{SERVER_PORT}...")
-    try:
-        from backend.main_api import app
-        config = uvicorn.Config(
-            app=app,
-            host=SERVER_HOST,
-            port=SERVER_PORT,
-            log_level="info",
-            access_log=False
-        )
-        server = uvicorn.Server(config)
-        # Desactivar instalación de signal handlers en hilos secundarios (requerido en Windows)
-        server.install_signal_handlers = lambda: None
-        server.run()
-    except Exception as e:
-        logger.exception(f"Error crítico en servidor Uvicorn: {e}")
-
-def setup_tray(window):
-    """Configura el icono en la bandeja del sistema con PyStray."""
-    try:
-        import pystray
-        
-        def on_show(icon, item):
-            window.show()
-            window.restore()
-
-        def on_hide(icon, item):
-            window.hide()
-
-        def on_exit(icon, item):
-            icon.stop()
-            window.destroy()
-            sys.exit(0)
-
-        menu = pystray.Menu(
-            pystray.MenuItem("Mostrar Ventana", on_show, default=True),
-            pystray.MenuItem("Minimizar a Bandeja", on_hide),
-            pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Salir de Ingeap", on_exit)
-        )
-
-        icon_img = create_tray_image()
-        tray_icon = pystray.Icon("IngeapInventario", icon_img, "Ingeap - Inventario y Viajes", menu)
-        
-        tray_thread = threading.Thread(target=tray_icon.run, daemon=True)
-        tray_thread.start()
-        logger.info("Icono de bandeja de sistema (PyStray) activado.")
-    except Exception as e:
-        logger.warning(f"No se pudo inicializar PyStray para bandeja de sistema: {e}")
+def run_headless_server():
+    """Modo servidor puro (FastAPI / Uvicorn) para despliegues en contenedores o Cloud."""
+    import uvicorn
+    from backend.config import SERVER_HOST, SERVER_PORT
+    from backend.main_api import app
+    logger.info(f"Iniciando API headless en {SERVER_HOST}:{SERVER_PORT}...")
+    uvicorn.run(app, host=SERVER_HOST, port=SERVER_PORT, log_level="info")
 
 def main():
-    parser = argparse.ArgumentParser(description="Ingeap - Sistema de Inventario y Viajes")
-    parser.add_argument("--server-only", action="store_true", help="Ejecutar solo el servidor FastAPI sin ventana PyWebView")
-    parser.add_argument("--dev-url", type=str, default="http://localhost:5173", help="URL del frontend en desarrollo")
+    parser = argparse.ArgumentParser(description="Ingeap Inventario Desktop & Cloud Service")
+    parser.add_argument("--server-only", action="store_true", help="Inicia únicamente el servidor FastAPI headless.")
+    parser.add_argument("--dev", action="store_true", help="Apunta la ventana al servidor de desarrollo de Vite (localhost:5173).")
     args = parser.parse_args()
 
-    # Si se pide solo servidor
+    # 1. Modo servidor headless opcional
     if args.server_only:
-        run_uvicorn()
+        init_db()
+        run_headless_server()
         return
 
-    # Verificar si el backend ya estaba en ejecución
-    server_already_running = is_port_in_use(SERVER_PORT, host="127.0.0.1")
-    if not server_already_running:
-        server_thread = threading.Thread(target=run_uvicorn, daemon=True)
-        server_thread.start()
+    # 2. Inicialización de escritorio nativo (estilo ReporteDiario)
+    asegurar_inicio_automatico()
+    init_db()
 
-        # Esperar activamente a que el backend esté listo antes de abrir PyWebView
-        server_ready = wait_for_server(SERVER_PORT, host="127.0.0.1", timeout=35.0)
-        if not server_ready:
-            logger.warning("El backend demoró más de 35s. Abriendo ventana igualmente...")
+    # Precarga y sincronización de catálogos en segundo plano
+    threading.Thread(target=lambda: google_service.get_catalogos(recargar=False), daemon=True).start()
+
+    api_bridge = ApiBridge()
+
+    # Determinar URL de la interfaz React
+    index_html = STATIC_DIR / "index.html"
+    if args.dev or not index_html.exists():
+        target_url = "http://localhost:5173"
+        logger.info(f"Modo desarrollo: conectando PyWebView a {target_url}")
     else:
-        logger.info(f"Puerto {SERVER_PORT} ya activo. Conectando ventana a la instancia existente.")
+        target_url = str(index_html.resolve())
+        logger.info(f"Cargando frontend empaquetado desde {target_url}")
 
-    # Target URL: Usar siempre 127.0.0.1 para evitar que Edge WebView2 intente resolver IPv6 (::1) y falle
-    target_url = f"http://127.0.0.1:{SERVER_PORT}"
-    dist_index = STATIC_DIR / "index.html"
+    ventana = webview.create_window(
+        title="Ingeap - Gestión de Inventario y Viajes",
+        url=target_url,
+        js_api=api_bridge,
+        width=1280,
+        height=820,
+        resizable=True,
+        min_size=(900, 650)
+    )
 
-    if is_port_in_use(5173, host="127.0.0.1"):
-        target_url = args.dev_url
-        logger.info(f"Detectado servidor Vite en ejecución. Apuntando PyWebView a {target_url}")
-    elif dist_index.exists():
-        target_url = f"http://127.0.0.1:{SERVER_PORT}"
-        logger.info(f"Frontend compilado detectado en {dist_index}. Apuntando PyWebView a {target_url}")
-    else:
-        target_url = f"http://127.0.0.1:{SERVER_PORT}"
-        logger.info(f"Apuntando PyWebView a backend raíz {target_url}")
+    if ventana is None:
+        raise RuntimeError("No se pudo instanciar la ventana de PyWebView.")
 
-    # Inicializar PyWebView en el hilo principal
+    api_bridge.set_ventana(ventana)
+
+    # 3. Configuración de Bandeja del Sistema (pystray)
+    icono_img = obtener_icono_tray()
+    tray_icon = None
+
+    def mostrar_ventana(icon=None, item=None):
+        if ventana:
+            ventana.show()
+            try:
+                ventana.restore()
+            except Exception:
+                pass
+
+    def ocultar_ventana(icon=None, item=None):
+        if ventana:
+            ventana.hide()
+
+    def sincronizar_catalogo(icon=None, item=None):
+        threading.Thread(target=lambda: google_service.get_catalogos(recargar=True), daemon=True).start()
+        if tray_icon and hasattr(tray_icon, "notify"):
+            try:
+                tray_icon.notify("Sincronización con Google Sheets iniciada en segundo plano.", "Ingeap Inventario")
+            except Exception:
+                pass
+
+    def comprobar_actualizacion_menu(icon=None, item=None):
+        res = api_bridge.verificar_actualizacion()
+        if res.get("actualizacion_disponible"):
+            mostrar_ventana()
+            if tray_icon and hasattr(tray_icon, "notify"):
+                try:
+                    tray_icon.notify(f"Nueva versión {res.get('version_nueva')} disponible.", "Actualización Ingeap")
+                except Exception:
+                    pass
+        else:
+            if tray_icon and hasattr(tray_icon, "notify"):
+                try:
+                    tray_icon.notify(f"Tienes la versión más reciente ({APP_VERSION}).", "Ingeap Inventario")
+                except Exception:
+                    pass
+
+    def salir_programa(icon=None, item=None):
+        if tray_icon:
+            tray_icon.stop()
+        if ventana:
+            ventana.events.closing.clear()
+            ventana.destroy()
+        os._exit(0)
+
+    menu = pystray.Menu(
+        pystray.MenuItem("Abrir Inventario", mostrar_ventana, default=True),
+        pystray.MenuItem("Sincronizar con Google Sheets", sincronizar_catalogo),
+        pystray.MenuItem("Comprobar Actualizaciones", comprobar_actualizacion_menu),
+        pystray.MenuItem("Ocultar en Bandeja", ocultar_ventana),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Salir", salir_programa)
+    )
+
+    tray_icon = pystray.Icon(
+        "IngeapInventario",
+        icono_img,
+        "Ingeap - Gestión de Inventario",
+        menu
+    )
+
+    def al_cerrar():
+        """Minimiza a la bandeja del sistema en lugar de cerrar el proceso."""
+        if ventana:
+            ventana.hide()
+        return False
+
+    ventana.events.closing += al_cerrar
+
+    # Ejecutar icono de bandeja en hilo desacoplado
+    tray_icon.run_detached()
+
+    logger.info("Iniciando bucle de ventana PyWebView (edgechromium)...")
+    webview.start(gui="edgechromium")
+
     try:
-        import webview
-
-        window = webview.create_window(
-            title="Ingeap - Control de Inventario y Viajes Multiproyecto",
-            url=target_url,
-            width=1280,
-            height=820,
-            min_size=(900, 600),
-            text_select=True,
-            confirm_close=False
-        )
-
-        # Configurar bandeja
-        setup_tray(window)
-
-        logger.info("Iniciando ventana de escritorio PyWebView...")
-        webview.start(debug=False)
-    except Exception as e:
-        logger.error(f"No se pudo iniciar la interfaz gráfica PyWebView: {e}")
-        logger.info("Continuando en modo servidor. Presione Ctrl+C para salir.")
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            logger.info("Servidor detenido.")
+        if tray_icon:
+            tray_icon.stop()
+    except Exception:
+        pass
 
 if __name__ == "__main__":
     import multiprocessing
     multiprocessing.freeze_support()
+    asegurar_instancia_unica()
     main()

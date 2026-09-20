@@ -146,6 +146,31 @@ def init_db() -> None:
             )
         """)
 
+        # Tabla de sesión activa persistente (ID=1 siempre)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS sesion (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                nombre TEXT,
+                dni TEXT,
+                mail TEXT,
+                avatar TEXT,
+                area TEXT,
+                fecha_login TEXT
+            )
+        """)
+
+        # Perfiles de empleados con avatar persistente
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS perfiles_empleados (
+                dni TEXT PRIMARY KEY,
+                nombre TEXT,
+                mail TEXT,
+                area TEXT,
+                avatar TEXT,
+                actualizado_en TEXT
+            )
+        """)
+
         conn.commit()
         logger.info("Base de datos SQLite local inicializada exitosamente.")
     except Exception as e:
@@ -612,6 +637,77 @@ def delete_elemento_catalogo_local(id_elemento: str) -> None:
     try:
         cursor.execute("DELETE FROM catalogo_cache WHERE id = ?", (str(id_elemento),))
         conn.commit()
+    finally:
+        conn.close()
+
+# ----------------------------------------------------------------------
+# SESION Y PERFILES DE USUARIO (Persistencia offline estilo ReporteDiario)
+# ----------------------------------------------------------------------
+def obtener_sesion_activa() -> Optional[Dict[str, Any]]:
+    """Recupera la sesión guardada en SQLite (ID=1)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM sesion WHERE id = 1")
+        row = cursor.fetchone()
+        if row:
+            sesion = dict(row)
+            dni = sesion.get("dni")
+            if dni:
+                cursor.execute("SELECT avatar FROM perfiles_empleados WHERE dni = ?", (dni,))
+                p_row = cursor.fetchone()
+                if p_row and p_row["avatar"]:
+                    sesion["avatar"] = p_row["avatar"]
+            return sesion
+        return None
+    finally:
+        conn.close()
+
+def guardar_sesion_activa(nombre: str, dni: str, mail: str = "", avatar: str = "", area: str = "") -> None:
+    """Persiste la sesión activa del usuario."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("""
+            INSERT OR REPLACE INTO sesion (id, nombre, dni, mail, avatar, area, fecha_login)
+            VALUES (1, ?, ?, ?, ?, ?, ?)
+        """, (nombre, dni, mail, avatar, area, now_iso))
+
+        cursor.execute("""
+            INSERT INTO perfiles_empleados (dni, nombre, mail, area, avatar, actualizado_en)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(dni) DO UPDATE SET
+                nombre = excluded.nombre,
+                mail = excluded.mail,
+                area = excluded.area,
+                avatar = CASE WHEN excluded.avatar != '' THEN excluded.avatar ELSE perfiles_empleados.avatar END,
+                actualizado_en = excluded.actualizado_en
+        """, (dni, nombre, mail, area, avatar, now_iso))
+        conn.commit()
+    finally:
+        conn.close()
+
+def borrar_sesion() -> None:
+    """Elimina la sesión activa actual."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM sesion WHERE id = 1")
+        conn.commit()
+    finally:
+        conn.close()
+
+def obtener_avatar_por_dni(dni: str) -> str:
+    """Recupera el avatar en Base64 asociado al DNI."""
+    if not dni:
+        return ""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT avatar FROM perfiles_empleados WHERE dni = ?", (dni.strip(),))
+        row = cursor.fetchone()
+        return row["avatar"] if row and row["avatar"] else ""
     finally:
         conn.close()
 
