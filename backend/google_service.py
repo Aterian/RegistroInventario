@@ -387,7 +387,11 @@ class GoogleService:
                 if it.get("id") in stock_minimos:
                     it["stock_minimo"] = stock_minimos[it["id"]]
 
-            save_catalogo_cache_local(inventario)
+            local_existente = get_catalogo_cache_local()
+            if not local_existente or len(inventario) >= len(local_existente):
+                save_catalogo_cache_local(inventario)
+            else:
+                logger.warning(f"[Cache] Inventario remoto tiene {len(inventario)} elementos pero la base local tiene {len(local_existente)}. Se conserva la base local más completa.")
 
             categorias = sorted(list({item.get("categoria", "") for item in inventario if item.get("categoria")}))
 
@@ -544,6 +548,7 @@ class GoogleService:
         # Cargar mapas de documentación en memoria
         docs_mov_map = self._read_documentos_movilidad(sh)
         docs_ins_map = self._read_documentos_instrumental(sh)
+        tabs_fallidas = []
 
         for tab_name in CATALOG_TABS:
             try:
@@ -708,11 +713,22 @@ class GoogleService:
                     })
             except Exception as e:
                 logger.warning(f"No se pudo procesar pestaña '{tab_name}': {e}")
+                tabs_fallidas.append(tab_name)
                 continue
 
         # Superponer ajustes locales de SQLite (mantenimiento, stock, modo de costeo)
         try:
             local_items = get_catalogo_cache_local()
+            if tabs_fallidas and local_items:
+                cats_cargadas = {it.get("categoria") for it in unified_items if it.get("categoria")}
+                restaurados = 0
+                for it in local_items:
+                    if it.get("categoria") not in cats_cargadas:
+                        unified_items.append(it)
+                        restaurados += 1
+                if restaurados:
+                    logger.info(f"[Resiliencia] Se preservaron {restaurados} elementos de categorías afectadas por fallas de conexión ({tabs_fallidas}).")
+
             local_map = {str(it.get("id")): it for it in local_items if it.get("id")}
             for u in unified_items:
                 loc = local_map.get(str(u["id"]))

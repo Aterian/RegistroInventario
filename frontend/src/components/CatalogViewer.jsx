@@ -61,6 +61,8 @@ export const CatalogViewer = ({
       case 'Instrumental': return <Wrench size={17} color="var(--accent-amber)" />;
       case 'Repuestos': return <Package size={17} color="var(--accent-cyan)" />;
       case 'Indumentaria': return <Shirt size={17} color="#8b5cf6" />;
+      case 'Materiales': return <Layers size={17} color="#10b981" />;
+      case 'Herramientas': return <Wrench size={17} color="#f59e0b" />;
       default: return <Box size={17} color="var(--corporate-gray)" />;
     }
   };
