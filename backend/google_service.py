@@ -1615,21 +1615,28 @@ class GoogleService:
                         if "km" in modo_c or ("movilidad" in tipo and not modo_c):
                             # Odómetro: delta km
                             delta = max(0.0, u_r - u_s)
+                            consumo_real = delta * pct_aplicable
                             costo_t = delta * costo_u * pct_aplicable
-                        elif "dias" in modo_c or "días" in modo_c or ("instrumental" in tipo and not modo_c) or ("adicional" in tipo and not modo_c):
+                        elif "dias" in modo_c or "días" in modo_c or ("instrumental" in tipo and not modo_c) or ("adicional" in tipo and not modo_c) or "antena satelital" in elem_name.lower():
                             # Días de uso
+                            consumo_real = u_r * pct_aplicable
                             costo_t = u_r * costo_u * pct_aplicable
                         elif "ciclo" in modo_c or ("dron" in tipo and not modo_c):
                             # Ciclos de batería
-                            costo_t = max(0.0, u_r - u_s) * costo_u * pct_aplicable if u_r > u_s else u_r * costo_u * pct_aplicable
+                            delta = max(0.0, u_r - u_s) if u_r > u_s else u_r
+                            consumo_real = delta * pct_aplicable
+                            costo_t = delta * costo_u * pct_aplicable
                         elif "ning" in modo_c or "sin" in modo_c:
+                            consumo_real = 0.0
                             costo_t = 0.0
                         else:
                             # Materiales / Herramientas: consumo neto
                             consumo = max(0.0, u_s - u_r)
+                            consumo_real = consumo * pct_aplicable
                             costo_t = consumo * costo_u * pct_aplicable
 
                         r["unidad_r"] = u_r
+                        r["consumo_real"] = round(consumo_real, 2)
                         r["costo_t"] = round(costo_t, 2)
                         r["fecha_r"] = fecha_r
                         r["user_r"] = user_r
@@ -1823,6 +1830,31 @@ class GoogleService:
     def get_todos_los_viajes(self) -> List[Dict[str, Any]]:
         """Retorna todos los viajes (activos y finalizados)."""
         return get_todos_los_viajes_local()
+
+    def eliminar_viaje(self, id_viaje: str) -> None:
+        """Elimina un viaje de la base de datos local y Google Sheets."""
+        # 1. Local SQLite
+        from backend.database import eliminar_viaje_local
+        eliminar_viaje_local(id_viaje)
+        
+        # 2. Google Sheets
+        # We find the rows matching this id_viaje and delete them, or set a status "ELIMINADO".
+        # Due to complexity of deleting arbitrary rows, we can just clear them or mark as deleted.
+        try:
+            ws = self._get_or_create_registro_gastos_ws()
+            records = ws.get_all_records()
+            rows_to_delete = []
+            # Gather row indices in reverse to avoid shifting
+            for i, r in enumerate(records, start=2):
+                if str(r.get("ID_viaje", "")).strip() == id_viaje:
+                    rows_to_delete.append(i)
+                    
+            rows_to_delete.sort(reverse=True)
+            for row_idx in rows_to_delete:
+                ws.delete_rows(row_idx)
+                time.sleep(0.5)
+        except Exception as e:
+            logger.error(f"Error al eliminar viaje en Sheets (ignorando): {e}")
 
 # Instancia singleton para el servicio
 google_service = GoogleService()

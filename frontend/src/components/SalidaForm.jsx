@@ -42,6 +42,10 @@ export const SalidaForm = ({
   const [itemSearch, setItemSearch] = useState('');
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState('TODOS');
 
+  // Ítems manuales
+  const [isManualOpen, setIsManualOpen] = useState(false);
+  const [manualItem, setManualItem] = useState({ nombre: '', cantidad: 1, costo: 0 });
+
   // Firma
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
   const [firmaBase64, setFirmaBase64] = useState('');
@@ -100,29 +104,52 @@ export const SalidaForm = ({
 
   // Agregar ítem aplicando las reglas de salida
   const handleAddItem = (item) => {
-    const cat = (item.categoria || '').toLowerCase();
-    const modo = (item.modo_costeo || '').toLowerCase();
-    const isMov = modo === 'km' || cat.includes('movilidad');
-    const isDron = modo === 'ciclos de bateria' || Boolean(item.es_dron || (item.nombre || '').toLowerCase().includes('dron'));
-    const isAdicional = cat.includes('adicional') || cat.includes('accesorio');
-    const isIns = modo === 'dias de uso' || isAdicional || (cat.includes('instrumental') && !isDron);
+    const enrichItem = (it) => {
+      const cat = (it.categoria || '').toLowerCase();
+      const modo = (it.modo_costeo || '').toLowerCase();
+      const isMov = modo === 'km' || cat.includes('movilidad');
+      const isDron = modo === 'ciclos de bateria' || Boolean(it.es_dron || (it.nombre || '').toLowerCase().includes('dron'));
+      const isAdicional = cat.includes('adicional') || cat.includes('accesorio');
+      const isIns = modo === 'dias de uso' || isAdicional || (cat.includes('instrumental') && !isDron);
 
-    let initUnidad = 1.0;
-    if (isMov) initUnidad = 0.0;
-    if (isIns) initUnidad = 0.0; // Instrumental / Adicionales: valor salida = 0 (días de uso al retorno)
+      let initUnidad = 1.0;
+      if (isMov) initUnidad = 0.0;
+      if (isIns) initUnidad = 0.0; 
 
-    setSelectedItems(prev => [
-      ...prev,
-      {
-        ...item,
+      return {
+        ...it,
         isMov,
         isIns,
         isDron,
         isAdicional,
         unidad_s: initUnidad,
         costo_u: isMov ? 0.45 : (isIns ? 25.0 : 10.0),
-      }
-    ]);
+      };
+    };
+
+    const mainItem = enrichItem(item);
+    let itemsToAdd = [mainItem];
+
+    // Buscar accesorios si es instrumental
+    const catMain = (item.categoria || '').toLowerCase();
+    const isMainIns = catMain.includes('instrumental') && item.codigo_interno;
+    
+    if (isMainIns) {
+      const prefix = item.codigo_interno + '-';
+      const accessories = inventario.filter(invIt => {
+        const invCod = (invIt.codigo_interno || '').toLowerCase();
+        return invCod.startsWith(prefix.toLowerCase()) && invCod !== item.codigo_interno.toLowerCase();
+      });
+      
+      accessories.forEach(acc => {
+        itemsToAdd.push(enrichItem(acc));
+      });
+    }
+
+    setSelectedItems(prev => {
+      const newItems = itemsToAdd.filter(newIt => !prev.some(p => p.id === newIt.id));
+      return [...prev, ...newItems];
+    });
   };
 
   // Manejador del escaneo QR
@@ -165,6 +192,35 @@ export const SalidaForm = ({
       });
     }
     setTimeout(() => setScanFeedback(null), 5000);
+  };
+
+  const handleAddManualItem = () => {
+    if (!manualItem.nombre.trim()) {
+      setScanFeedback({ type: 'error', msg: 'El nombre del material es obligatorio.' });
+      return;
+    }
+    if (manualItem.cantidad <= 0) {
+      setScanFeedback({ type: 'error', msg: 'La cantidad debe ser mayor a 0.' });
+      return;
+    }
+
+    const newItem = {
+      id: 'manual_' + Date.now(),
+      categoria: 'Materiales',
+      codigo_interno: 'MANUAL',
+      nombre: manualItem.nombre.trim(),
+      modo_costeo: 'Cantidad',
+      isMov: false,
+      isIns: false,
+      isDron: false,
+      isAdicional: false,
+      unidad_s: parseFloat(manualItem.cantidad),
+      costo_u: parseFloat(manualItem.costo) || 0,
+    };
+
+    setSelectedItems(prev => [...prev, newItem]);
+    setManualItem({ nombre: '', cantidad: 1, costo: 0 });
+    setIsManualOpen(false);
   };
 
   const handleItemChange = (index, field, value) => {
@@ -525,7 +581,81 @@ export const SalidaForm = ({
               >
                 <Camera size={16} /> Escanear QR
               </button>
+              
+              <button
+                type="button"
+                onClick={() => setIsManualOpen(!isManualOpen)}
+                className="btn btn-secondary"
+                style={{ 
+                  height: '38px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.45rem', 
+                  whiteSpace: 'nowrap',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+              >
+                <Plus size={16} /> Material Manual
+              </button>
             </div>
+
+            {isManualOpen && (
+              <div style={{
+                background: 'var(--bg-card-hover)',
+                border: '1px solid var(--border-subtle)',
+                borderRadius: '6px',
+                padding: '0.85rem',
+                marginBottom: '0.75rem',
+                display: 'flex',
+                gap: '0.75rem',
+                flexWrap: 'wrap',
+                alignItems: 'flex-end'
+              }}>
+                <div style={{ flex: '1 1 200px' }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Nombre del Material</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    value={manualItem.nombre}
+                    onChange={(e) => setManualItem({...manualItem, nombre: e.target.value})}
+                    placeholder="Ej. Precintos, Cinta, etc."
+                    style={{ height: '34px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div style={{ width: '90px' }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Cantidad</label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={manualItem.cantidad}
+                    onChange={(e) => setManualItem({...manualItem, cantidad: e.target.value})}
+                    min="1"
+                    style={{ height: '34px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <div style={{ width: '100px' }}>
+                  <label className="form-label" style={{ fontSize: '0.8rem', marginBottom: '0.2rem' }}>Costo Unit. ($)</label>
+                  <input 
+                    type="number" 
+                    className="form-input" 
+                    value={manualItem.costo}
+                    onChange={(e) => setManualItem({...manualItem, costo: e.target.value})}
+                    min="0"
+                    step="0.01"
+                    style={{ height: '34px', fontSize: '0.85rem' }}
+                  />
+                </div>
+                <button 
+                  type="button"
+                  onClick={handleAddManualItem}
+                  className="btn btn-primary"
+                  style={{ height: '34px', fontSize: '0.85rem', display: 'flex', gap: '0.3rem', alignItems: 'center', padding: '0 1rem' }}
+                >
+                  <Check size={14} /> Agregar
+                </button>
+              </div>
+            )}
 
             {/* Banner de feedback de escaneo QR */}
             {scanFeedback && (

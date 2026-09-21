@@ -14,7 +14,8 @@ import {
   Eye,
   History,
   RefreshCw,
-  Edit3
+  Edit3,
+  Trash2
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -33,13 +34,34 @@ export const Dashboard = ({
 
   useEffect(() => {
     if (vista === 'historial') {
-      setLoadingHistorial(true);
-      api.getTodosLosViajes()
-        .then(res => setHistorialViajes(res))
-        .catch(err => console.error('Error cargando historial:', err))
-        .finally(() => setLoadingHistorial(false));
+      cargarHistorial();
     }
   }, [vista]);
+
+  const cargarHistorial = () => {
+    setLoadingHistorial(true);
+    api.getTodosLosViajes()
+      .then(res => setHistorialViajes(res))
+      .catch(err => console.error('Error cargando historial:', err))
+      .finally(() => setLoadingHistorial(false));
+  };
+
+  const handleEliminarViaje = async (viajeId) => {
+    if (window.confirm('¿Estás seguro de que deseas eliminar este viaje? Esta acción no se puede deshacer.')) {
+      try {
+        await api.eliminarViaje(viajeId);
+        if (vista === 'historial') {
+          cargarHistorial();
+        } else {
+          // If active view, we might need a prop to reload, but usually onNewSalida or refreshing handles it.
+          // Let's just reload the page or trigger a refresh if the parent has it, or just reload:
+          window.location.reload();
+        }
+      } catch (err) {
+        alert('Error al eliminar viaje: ' + err.message);
+      }
+    }
+  };
 
   const viajesLista = vista === 'activos' ? viajesActivos : historialViajes;
 
@@ -340,6 +362,23 @@ export const Dashboard = ({
                     title="Descargar Remito Oficial PDF"
                   >
                     <FileText size={14} /> PDF
+                  </button>
+
+                  <button
+                    onClick={() => handleEliminarViaje(viaje.id_viaje)}
+                    className="btn btn-sm btn-outline"
+                    style={{ 
+                      flex: '0 0 auto', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'center', 
+                      gap: '0.3rem',
+                      color: 'var(--primary-red)',
+                      borderColor: 'rgba(204, 51, 51, 0.35)'
+                    }}
+                    title="Eliminar Viaje"
+                  >
+                    <Trash2 size={14} />
                   </button>
 
                   {!isFinished && onOpenRetorno && (

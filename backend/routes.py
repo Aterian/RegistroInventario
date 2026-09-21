@@ -247,6 +247,16 @@ def get_viaje_detalle(id_viaje: str):
         raise HTTPException(status_code=404, detail="Viaje no encontrado")
     return viaje
 
+@router.delete("/viajes/{id_viaje}")
+def eliminar_viaje(id_viaje: str):
+    """Elimina el viaje completo de la base de datos."""
+    try:
+        google_service.eliminar_viaje(id_viaje)
+        return {"success": True, "id_viaje": id_viaje}
+    except Exception as e:
+        logger.error(f"Error al eliminar viaje {id_viaje}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al eliminar viaje: {str(e)}")
+
 @router.post("/viajes/salida")
 def registrar_salida(payload: SalidaRequest):
     """

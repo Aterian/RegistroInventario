@@ -208,7 +208,8 @@ REGISTRO_GASTOS_COLUMNS = [
     "firma_r",
     "fecha_hora_s",
     "fecha_hora_r",
-    "unidad_medida"
+    "unidad_medida",
+    "consumo_real"
 ]
 
 

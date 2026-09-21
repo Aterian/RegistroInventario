@@ -59,15 +59,17 @@ def init_db() -> None:
                 fecha_hora_s TEXT,
                 fecha_hora_r TEXT,
                 unidad_medida TEXT,
+                consumo_real REAL,
                 synced_sheets INTEGER DEFAULT 0,
                 FOREIGN KEY (id_viaje) REFERENCES viajes(id_viaje)
             )
         """)
 
         # Migraciones seguras para gastos_detalle
-        for col_name in ["fecha_hora_s", "fecha_hora_r", "unidad_medida"]:
+        for col_name in ["fecha_hora_s", "fecha_hora_r", "unidad_medida", "consumo_real"]:
             try:
-                cursor.execute(f"ALTER TABLE gastos_detalle ADD COLUMN {col_name} TEXT")
+                col_type = "REAL" if col_name == "consumo_real" else "TEXT"
+                cursor.execute(f"ALTER TABLE gastos_detalle ADD COLUMN {col_name} {col_type}")
             except Exception:
                 pass
 
@@ -225,8 +227,8 @@ def save_viaje_salida_local(
                 INSERT OR REPLACE INTO gastos_detalle (
                     id_gasto, id_viaje, id_proyecto, proyecto, tipo, elemento,
                     fecha_s, fecha_r, unidad_s, unidad_r, costo_u, costo_t,
-                    user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, synced_sheets
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, consumo_real, synced_sheets
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 fila.get("id_gasto"),
                 id_viaje,
@@ -247,7 +249,8 @@ def save_viaje_salida_local(
                 f_h_s,
                 f_h_s,
                 f_h_r,
-                u_m
+                u_m,
+                0.0
             ))
 
         conn.commit()
@@ -280,7 +283,7 @@ def save_viaje_retorno_local(
             f_h_r = fila.get("fecha_hora_r") or now_iso
             cursor.execute("""
                 UPDATE gastos_detalle 
-                SET fecha_r = ?, unidad_r = ?, costo_t = ?, user_r = ?, firma_r = ?, fecha_hora_r = ?, fecha_hora = ?
+                SET fecha_r = ?, unidad_r = ?, costo_t = ?, user_r = ?, firma_r = ?, fecha_hora_r = ?, fecha_hora = ?, consumo_real = ?
                 WHERE id_gasto = ?
             """, (
                 fecha_r,
@@ -290,6 +293,7 @@ def save_viaje_retorno_local(
                 firma_r,
                 f_h_r,
                 now_iso,
+                float(fila.get("consumo_real", 0.0)),
                 fila.get("id_gasto")
             ))
 
@@ -382,20 +386,21 @@ def update_viaje_items_local(
                     "fecha_hora_s": now_iso,
                     "fecha_hora_r": "",
                     "unidad_medida": u_m,
+                    "consumo_real": 0.0,
                     "synced_sheets": 0
                 }
                 cursor.execute("""
                     INSERT INTO gastos_detalle (
                         id_gasto, id_viaje, id_proyecto, proyecto, tipo, elemento,
                         fecha_s, fecha_r, unidad_s, unidad_r, costo_u, costo_t,
-                        user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, synced_sheets
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                        user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, consumo_real, synced_sheets
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
                 """, (
                     fila["id_gasto"], fila["id_viaje"], fila["id_proyecto"], fila["proyecto"],
                     fila["tipo"], fila["elemento"], fila["fecha_s"], fila["fecha_r"],
                     fila["unidad_s"], fila["unidad_r"], fila["costo_u"], fila["costo_t"],
                     fila["user_s"], fila["firma_s"], fila["user_r"], fila["firma_r"],
-                    fila["fecha_hora"], fila["fecha_hora_s"], fila["fecha_hora_r"], fila["unidad_medida"]
+                    fila["fecha_hora"], fila["fecha_hora_s"], fila["fecha_hora_r"], fila["unidad_medida"], fila["consumo_real"]
                 ))
                 filas_generadas.append(fila)
 
@@ -425,6 +430,21 @@ def mark_viaje_as_synced(id_viaje: str) -> None:
         conn.commit()
     except Exception as e:
         logger.error(f"Error al marcar viaje {id_viaje} como sincronizado: {e}")
+    finally:
+        conn.close()
+
+def eliminar_viaje_local(id_viaje: str) -> None:
+    """Elimina un viaje y sus detalles de la base de datos local."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("DELETE FROM gastos_detalle WHERE id_viaje = ?", (id_viaje,))
+        cursor.execute("DELETE FROM viajes WHERE id_viaje = ?", (id_viaje,))
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Error al eliminar viaje local {id_viaje}: {e}")
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

@@ -565,6 +565,20 @@ export const api = {
     return handleFetchResponse(res);
   },
 
+  eliminarViaje: async (idViaje) => {
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.eliminar_viaje) {
+      return await bridge.eliminar_viaje(idViaje);
+    }
+    if (getGasUrl()) {
+      return await callGas('eliminarViaje', { id_viaje: idViaje }, 'POST');
+    }
+    const res = await fetch(`${getApiBaseUrl()}/viajes/${idViaje}`, {
+      method: 'DELETE'
+    });
+    return handleFetchResponse(res);
+  },
+
   // Salida multiproyecto
   registrarSalida: async (data) => {
     const bridge = await getDesktopBridge();

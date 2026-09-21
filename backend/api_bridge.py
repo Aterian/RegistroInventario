@@ -244,6 +244,15 @@ class ApiBridge:
             logger.error(f"[ApiBridge] Error en get_todos_los_viajes: {e}")
             return []
 
+    def eliminar_viaje(self, id_viaje: str) -> Dict[str, Any]:
+        """Elimina un viaje de la base de datos y sheets."""
+        try:
+            google_service.eliminar_viaje(id_viaje)
+            return {"success": True, "id_viaje": id_viaje}
+        except Exception as e:
+            logger.error(f"[ApiBridge] Error en eliminar_viaje: {e}")
+            return {"success": False, "error": str(e)}
+
     def get_viaje_detalle(self, id_viaje: str) -> Dict[str, Any]:
         """Obtiene la información y desglose de un viaje."""
         viaje = get_viaje_by_id_local(id_viaje)

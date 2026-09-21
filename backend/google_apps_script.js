@@ -36,7 +36,7 @@ const ID_CARPETA_FIRMAS = "";
 const REGISTRO_GASTOS_COLUMNS = [
   "id_gasto", "id_viaje", "id_proyecto", "proyecto", "tipo", "elemento",
   "fecha_desde", "fecha_hasta", "fecha_s", "fecha_r", "unidad_s", "unidad_r", "costo_u", "costo_t",
-  "user_s", "firma_s", "user_r", "firma_r", "fecha_hora_s", "fecha_hora_r", "unidad_medida"
+  "user_s", "firma_s", "user_r", "firma_r", "fecha_hora_s", "fecha_hora_r", "unidad_medida", "consumo_real"
 ];
 
 const SOLICITUDES_COLUMNS = [
@@ -126,6 +126,10 @@ function handleRequest(e, method) {
 
       case "registrarRetorno":
         result = registrarRetorno(postData);
+        break;
+
+      case "eliminarViaje":
+        result = eliminarViaje(postData);
         break;
 
       case "marcarMantenimiento":
@@ -745,6 +749,7 @@ function registrarRetorno(data) {
   const colCostoT = colIndex("costo_t");
   const colUserR = colIndex("user_r");
   const colFirmaR = colIndex("firma_r");
+  const colConsumoReal = colIndex("consumo_real");
   const colFechaHoraR = colIndex("fecha_hora_r");
   const colFechaHora = colIndex("fecha_hora");
   const colIdViaje = colIndex("id_viaje") - 1;
@@ -783,22 +788,30 @@ function registrarRetorno(data) {
         const modoC = String(itemCoincidente.modo_costeo || "").toLowerCase();
 
         let costoT = 0;
+        let consumoReal = 0;
         if (modoC.indexOf("km") !== -1 || (tipo.indexOf("movilidad") !== -1 && !modoC)) {
           const delta = Math.max(0, uRetorno - uSalida);
+          consumoReal = delta * pct;
           costoT = delta * costoU * pct;
-        } else if (modoC.indexOf("dia") !== -1 || modoC.indexOf("día") !== -1 || (tipo.indexOf("instrumental") !== -1 && !modoC) || (tipo.indexOf("adicional") !== -1 && !modoC)) {
+        } else if (modoC.indexOf("dia") !== -1 || modoC.indexOf("día") !== -1 || (tipo.indexOf("instrumental") !== -1 && !modoC) || (tipo.indexOf("adicional") !== -1 && !modoC) || elemName.toLowerCase().indexOf("antena satelital") !== -1) {
+          consumoReal = uRetorno * pct;
           costoT = uRetorno * costoU * pct;
         } else if (modoC.indexOf("ciclo") !== -1 || (tipo.indexOf("dron") !== -1 && !modoC)) {
-          costoT = Math.max(0, uRetorno - uSalida) * costoU * pct;
+          const delta = Math.max(0, uRetorno - uSalida) || uRetorno;
+          consumoReal = delta * pct;
+          costoT = delta * costoU * pct;
         } else if (modoC.indexOf("ning") !== -1 || modoC.indexOf("sin") !== -1) {
+          consumoReal = 0;
           costoT = 0;
         } else {
           const consumo = Math.max(0, uSalida - uRetorno);
+          consumoReal = consumo * pct;
           costoT = consumo * costoU * pct;
         }
 
         if (colFechaR > 0) sheet.getRange(i + 1, colFechaR).setValue(fechaR);
         if (colUnidadR > 0) sheet.getRange(i + 1, colUnidadR).setValue(uRetorno);
+        if (colConsumoReal > 0) sheet.getRange(i + 1, colConsumoReal).setValue(consumoReal);
         if (colCostoT > 0) sheet.getRange(i + 1, colCostoT).setValue(costoT);
         if (colUserR > 0) sheet.getRange(i + 1, colUserR).setValue(userR);
         if (colFirmaR > 0) sheet.getRange(i + 1, colFirmaR).setValue(firmaUrl);
@@ -914,6 +927,40 @@ function getViajeDetalle(idViaje) {
     return { success: true, viaje: v };
   }
   return { success: false, error: "Viaje no encontrado" };
+}
+
+function eliminarViaje(data) {
+  try {
+    const idViaje = data.id_viaje;
+    if (!idViaje) throw new Error("Falta id_viaje");
+
+    const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+    const records = sheet.getDataRange().getValues();
+    if (records.length < 2) {
+      return { success: false, error: "No hay registros cargados." };
+    }
+
+    const headers = records[0].map(h => String(h).trim().toLowerCase());
+    const idViajeIdx = headers.indexOf("id_viaje");
+    
+    if (idViajeIdx === -1) {
+      throw new Error("No se encontró la columna id_viaje en registro_gastos");
+    }
+
+    let deletedCount = 0;
+    // Iterate backwards to safely delete rows without shifting indices
+    for (let i = records.length - 1; i > 0; i--) {
+      const row = records[i];
+      if (String(row[idViajeIdx]).trim() === String(idViaje).trim()) {
+        sheet.deleteRow(i + 1);
+        deletedCount++;
+      }
+    }
+
+    return { success: true, id_viaje: idViaje, deleted_rows: deletedCount };
+  } catch (e) {
+    return { success: false, error: e.toString() };
+  }
 }
 
 function getAlertas() {
