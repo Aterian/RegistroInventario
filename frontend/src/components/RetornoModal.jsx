@@ -34,9 +34,20 @@ export const RetornoModal = ({
     });
   }, [viaje]);
 
-  const items = useMemo(() => {
+  const rawItems = useMemo(() => {
     return viaje.items || [];
   }, [viaje]);
+
+  const items = useMemo(() => {
+    const itemsMap = new Map();
+    rawItems.forEach(it => {
+      const key = it.elemento || it.nombre;
+      if (!itemsMap.has(key)) {
+        itemsMap.set(key, { ...it });
+      }
+    });
+    return Array.from(itemsMap.values());
+  }, [rawItems]);
 
   // Estados de formulario
   const [unidadesRetorno, setUnidadesRetorno] = useState({});

@@ -170,7 +170,7 @@ def calcular_unidad_medida(tipo: str, elemento: str, modo_costeo: str = "") -> s
         return "km"
     elif "dron" in t or "dron" in e:
         return "ciclos de batería"
-    elif "instrumental" in t:
+    elif "instrumental" in t or "antena" in e or "satelital" in e:
         return "días de uso"
     elif "adicional" in t:
         return "días de uso"
@@ -1680,7 +1680,7 @@ class GoogleService:
                     u_s = float(g.get("unidad_s", 0.0) or 0.0)
                     costo_u = float(g.get("costo_u", 0.0) or 0.0)
                     p_id = str(g.get("id_proyecto", ""))
-                    pct = prorrateo_map.get(p_id, 1.0)
+                    pct = prorrateo_map.get(p_id, 1.0 / max(len(prorrateos), 1))
                     tipo = str(g.get("tipo", "")).lower()
                     modo_c = str(g.get("modo_costeo", "")).lower()
 

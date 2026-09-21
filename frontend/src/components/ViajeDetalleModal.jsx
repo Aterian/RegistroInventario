@@ -20,7 +20,19 @@ export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno, onOpe
 
   const isActivo = !viaje.fecha_r;
   const proyectos = viaje.proyectos || [];
-  const items = viaje.items || [];
+  const rawItems = viaje.items || [];
+
+  const itemsMap = new Map();
+  rawItems.forEach(it => {
+    const key = it.elemento || it.nombre;
+    if (!itemsMap.has(key)) {
+      itemsMap.set(key, { ...it });
+    } else {
+      const existing = itemsMap.get(key);
+      existing.costo_t = (parseFloat(existing.costo_t) || 0) + (parseFloat(it.costo_t) || 0);
+    }
+  });
+  const items = Array.from(itemsMap.values());
 
   const pdfUrl = api.getPdfUrl(viaje.id_viaje);
 
@@ -238,15 +250,14 @@ export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno, onOpe
           borderTop: '1px solid var(--border-subtle)',
           paddingTop: '1rem'
         }}>
-          <a
-            href={pdfUrl}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => api.abrirRemito(viaje.id_viaje)}
             className="btn btn-outline"
-            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', textDecoration: 'none' }}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}
           >
             <Download size={16} /> Descargar Remito Oficial PDF
-          </a>
+          </button>
 
           <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
             {isActivo && onOpenEditarSalida && (

@@ -467,7 +467,7 @@ function calcularUnidadMedidaGas(tipo, elemento, modoCosteo) {
   const e = String(elemento || "").toLowerCase();
   if (t.indexOf("movilidad") !== -1) return "km";
   if (t.indexOf("dron") !== -1 || e.indexOf("dron") !== -1) return "ciclos de batería";
-  if (t.indexOf("instrumental") !== -1) return "días de uso";
+  if (t.indexOf("instrumental") !== -1 || e.indexOf("antena") !== -1 || e.indexOf("satelital") !== -1) return "días de uso";
   if (t.indexOf("adicional") !== -1) return "días de uso";
   if (t.indexOf("accesorio") !== -1) return "";
   if (t.indexOf("material") !== -1 || t.indexOf("herramienta") !== -1 || t.indexOf("indumentaria") !== -1 || t.indexOf("repuesto") !== -1) return "cantidad";
@@ -724,7 +724,7 @@ function editarSalida(data) {
 function registrarRetorno(data) {
   const idViaje = data.id_viaje;
   const itemsRetorno = data.items || [];
-  const prorrateos = data.prorrateos || [];
+  const prorrateos = data.prorrateos || data.prorrateo || [];
   const userR = data.user_r || "";
   const fechaR = data.fecha_r || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
   const nowIso = new Date().toISOString();

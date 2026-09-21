@@ -333,16 +333,14 @@ export const Dashboard = ({
                     </button>
                   )}
 
-                  <a
-                    href={pdfUrl}
-                    target="_blank"
-                    rel="noreferrer"
+                  <button
+                    onClick={() => api.abrirRemito(viaje.id_viaje)}
                     className="btn btn-sm btn-outline"
-                    style={{ flex: 1, textDecoration: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.3rem' }}
                     title="Descargar Remito Oficial PDF"
                   >
                     <FileText size={14} /> PDF
-                  </a>
+                  </button>
 
                   {!isFinished && onOpenRetorno && (
                     <button
