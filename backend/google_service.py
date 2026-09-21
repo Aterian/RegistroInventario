@@ -274,10 +274,19 @@ class GoogleService:
             logger.warning(f"No se pudo abrir hoja de inventario '{sheet_inv}': {e}")
 
         try:
-            self._open_sheet(sheet_ros)
-            status["roster_ok"] = True
-        except Exception as e:
-            logger.warning(f"No se pudo abrir hoja de roster '{sheet_ros}': {e}")
+            sh_inv = self._open_sheet(sheet_inv)
+            tab_titles = [w.title for w in sh_inv.worksheets()]
+            if "usuarios" in tab_titles or "proyectos_activos" in tab_titles:
+                status["roster_ok"] = True
+            else:
+                self._open_sheet(sheet_ros)
+                status["roster_ok"] = True
+        except Exception:
+            try:
+                self._open_sheet(sheet_ros)
+                status["roster_ok"] = True
+            except Exception as e:
+                logger.warning(f"No se pudo abrir hoja de roster '{sheet_ros}': {e}")
 
         if self.drive_service:
             try:
@@ -426,52 +435,76 @@ class GoogleService:
             }
 
     def _read_proyectos(self) -> List[Dict[str, Any]]:
-        """Lee la pestaña 0_proyectos del libro BBDD_asist_roster."""
-        try:
-            sh = self._open_roster_sheet()
-            ws = sh.worksheet("0_proyectos")
-            records = ws.get_all_records()
-            proyectos = []
-            for r in records:
-                p_id = str(r.get("id_proyecto", "")).strip()
-                denom = str(r.get("denominacion", "")).strip()
-                area = str(r.get("area", "")).strip()
-                if p_id or denom:
-                    proyectos.append({
-                        "id_proyecto": p_id,
-                        "denominacion": denom,
-                        "area": area
-                    })
-            return proyectos
-        except Exception as e:
-            logger.error(f"Error al leer 0_proyectos: {e}")
-            return []
+        """Lee proyectos activos, priorizando la hoja Inventario (proyectos_activos) con fallback a Roster."""
+        for sh_getter, tab_candidates in [
+            (self._open_inventario_sheet, ["proyectos_activos", "0_proyectos", "proyectos"]),
+            (self._open_roster_sheet, ["0_proyectos", "proyectos_activos", "proyectos"])
+        ]:
+            try:
+                sh = sh_getter()
+                for tab in tab_candidates:
+                    try:
+                        ws = sh.worksheet(tab)
+                        records = ws.get_all_records()
+                        if records:
+                            proyectos = []
+                            for r in records:
+                                p_id = str(r.get("id_proyecto", "") or r.get("id", "")).strip()
+                                denom = str(r.get("denominacion", "") or r.get("nombre", "") or r.get("proyecto", "")).strip()
+                                area = str(r.get("area", "")).strip()
+                                if p_id or denom:
+                                    proyectos.append({
+                                        "id_proyecto": p_id,
+                                        "denominacion": denom,
+                                        "area": area
+                                    })
+                            if proyectos:
+                                logger.info(f"Se cargaron {len(proyectos)} proyectos desde '{sh.title}' -> '{tab}'.")
+                                return proyectos
+                    except gspread.WorksheetNotFound:
+                        continue
+            except Exception as e:
+                logger.warning(f"Aviso leyendo proyectos: {e}")
+                continue
+        return []
 
     def _read_usuarios(self) -> List[Dict[str, Any]]:
-        """Lee la pestaña 0_usuarios del libro BBDD_asist_roster."""
-        try:
-            sh = self._open_roster_sheet()
-            ws = sh.worksheet("0_usuarios")
-            records = ws.get_all_records()
-            usuarios = []
-            for r in records:
-                u_id = str(r.get("id_usuario", "")).strip()
-                nombre = str(r.get("nombre", "")).strip()
-                email = str(r.get("email", "")).strip()
-                area = str(r.get("area", "")).strip()
-                dni = str(r.get("dni", "")).strip()
-                if u_id or nombre:
-                    usuarios.append({
-                        "id_usuario": u_id,
-                        "nombre": nombre,
-                        "email": email,
-                        "area": area,
-                        "dni": dni
-                    })
-            return usuarios
-        except Exception as e:
-            logger.error(f"Error al leer 0_usuarios: {e}")
-            return []
+        """Lee usuarios, priorizando la hoja Inventario (usuarios) con fallback a Roster."""
+        for sh_getter, tab_candidates in [
+            (self._open_inventario_sheet, ["usuarios", "0_usuarios", "personal"]),
+            (self._open_roster_sheet, ["0_usuarios", "usuarios", "personal"])
+        ]:
+            try:
+                sh = sh_getter()
+                for tab in tab_candidates:
+                    try:
+                        ws = sh.worksheet(tab)
+                        records = ws.get_all_records()
+                        if records:
+                            usuarios = []
+                            for r in records:
+                                u_id = str(r.get("id_usuario", "") or r.get("id", "")).strip()
+                                nombre = str(r.get("nombre", "") or r.get("nombre_apellido", "")).strip()
+                                email = str(r.get("email", "") or r.get("mail", "")).strip()
+                                area = str(r.get("area", "")).strip()
+                                dni = str(r.get("dni", "")).strip()
+                                if u_id or nombre:
+                                    usuarios.append({
+                                        "id_usuario": u_id,
+                                        "nombre": nombre,
+                                        "email": email,
+                                        "area": area,
+                                        "dni": dni
+                                    })
+                            if usuarios:
+                                logger.info(f"Se cargaron {len(usuarios)} usuarios desde '{sh.title}' -> '{tab}'.")
+                                return usuarios
+                    except gspread.WorksheetNotFound:
+                        continue
+            except Exception as e:
+                logger.warning(f"Aviso leyendo usuarios: {e}")
+                continue
+        return []
 
     def _read_documentos_movilidad(self, sh: gspread.Spreadsheet) -> Dict[str, List[Dict[str, Any]]]:
         """Lee la pestaña 3_1_Control_M y agrupa documentos por ID_movilidad."""

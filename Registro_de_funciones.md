@@ -80,10 +80,10 @@ Módulo encargado de la integración con las APIs de Google Cloud y gestión de 
   - *Propósito:* Provee los catálogos unificados. Si `recargar=False` y el caché no expiró (< 300 segundos), entrega desde memoria; caso contrario consulta Google Sheets o SQLite local.
 
 - **`_read_proyectos() -> List[Dict[str, Any]]`**
-  - *Propósito:* Lee la pestaña `0_proyectos` del libro `BBDD_asist_roster`.
+  - *Propósito:* Lee la pestaña `proyectos_activos` (o `0_proyectos`) priorizando el libro unificado `Inventario v1.5 - Dev` con fallback automático a `BBDD_asist_roster`.
 
 - **`_read_usuarios() -> List[Dict[str, Any]]`**
-  - *Propósito:* Lee la pestaña `0_usuarios` del libro `BBDD_asist_roster`.
+  - *Propósito:* Lee la pestaña `usuarios` (o `0_usuarios`) priorizando el libro unificado `Inventario v1.5 - Dev` con fallback automático a `BBDD_asist_roster`.
 
 - **`_is_baja(row: Dict[str, Any]) -> bool`**
   - *Propósito:* Determina si un registro está dado de baja analizando las columnas `Activo_baja`, `Ativo_baja` y `Estado`.

@@ -275,41 +275,60 @@ function getCatalogos() {
   });
 
   // 2. Leer proyectos y usuarios
-  let ssRoster = ss;
-  if (ID_HOJA_ROSTER) {
+  let sheetProy = ss.getSheetByName("proyectos_activos") || ss.getSheetByName("0_proyectos");
+  let sheetUsu = ss.getSheetByName("usuarios") || ss.getSheetByName("0_usuarios");
+
+  let ssRoster = null;
+  if ((!sheetProy || !sheetUsu) && ID_HOJA_ROSTER) {
     try {
       ssRoster = SpreadsheetApp.openById(ID_HOJA_ROSTER);
+      if (!sheetProy) sheetProy = ssRoster.getSheetByName("proyectos_activos") || ssRoster.getSheetByName("0_proyectos");
+      if (!sheetUsu) sheetUsu = ssRoster.getSheetByName("usuarios") || ssRoster.getSheetByName("0_usuarios");
     } catch (e) {
-      ssRoster = ss;
+      // Continuar con ss principal
     }
   }
 
   const proyectos = [];
-  const sheetProy = ssRoster.getSheetByName("0_proyectos");
   if (sheetProy) {
     const dataP = sheetProy.getDataRange().getValues();
-    for (let i = 1; i < dataP.length; i++) {
-      const idP = String(dataP[i][0] || "").trim();
-      const denom = String(dataP[i][1] || "").trim();
-      const area = String(dataP[i][2] || "").trim();
-      if (idP || denom) {
-        proyectos.push({ id_proyecto: idP, denominacion: denom, area: area });
+    if (dataP.length > 1) {
+      const headersP = dataP[0].map(h => String(h).trim().toLowerCase());
+      const idxId = headersP.indexOf("id_proyecto") !== -1 ? headersP.indexOf("id_proyecto") : 0;
+      const idxDenom = headersP.indexOf("denominacion") !== -1 ? headersP.indexOf("denominacion") : (headersP.indexOf("nombre") !== -1 ? headersP.indexOf("nombre") : 1);
+      const idxArea = headersP.indexOf("area") !== -1 ? headersP.indexOf("area") : 2;
+
+      for (let i = 1; i < dataP.length; i++) {
+        const idP = String(dataP[i][idxId] || "").trim();
+        const denom = String(dataP[i][idxDenom] || "").trim();
+        const area = String(dataP[i][idxArea] || "").trim();
+        if (idP || denom) {
+          proyectos.push({ id_proyecto: idP, denominacion: denom, area: area });
+        }
       }
     }
   }
 
   const usuarios = [];
-  const sheetUsu = ssRoster.getSheetByName("0_usuarios");
   if (sheetUsu) {
     const dataU = sheetUsu.getDataRange().getValues();
-    for (let i = 1; i < dataU.length; i++) {
-      const idU = String(dataU[i][0] || "").trim();
-      const nom = String(dataU[i][1] || "").trim();
-      const mail = String(dataU[i][2] || "").trim();
-      const area = String(dataU[i][3] || "").trim();
-      const dni = String(dataU[i][4] || "").trim();
-      if (idU || nom) {
-        usuarios.push({ id_usuario: idU, nombre: nom, email: mail, area: area, dni: dni });
+    if (dataU.length > 1) {
+      const headersU = dataU[0].map(h => String(h).trim().toLowerCase());
+      const idxId = headersU.indexOf("id_usuario") !== -1 ? headersU.indexOf("id_usuario") : 0;
+      const idxNom = headersU.indexOf("nombre") !== -1 ? headersU.indexOf("nombre") : 1;
+      const idxMail = headersU.indexOf("email") !== -1 ? headersU.indexOf("email") : (headersU.indexOf("mail") !== -1 ? headersU.indexOf("mail") : 2);
+      const idxArea = headersU.indexOf("area") !== -1 ? headersU.indexOf("area") : 3;
+      const idxDni = headersU.indexOf("dni") !== -1 ? headersU.indexOf("dni") : 4;
+
+      for (let i = 1; i < dataU.length; i++) {
+        const idU = String(dataU[i][idxId] || "").trim();
+        const nom = String(dataU[i][idxNom] || "").trim();
+        const mail = String(dataU[i][idxMail] || "").trim();
+        const area = String(dataU[i][idxArea] || "").trim();
+        const dni = String(dataU[i][idxDni] || "").trim();
+        if (idU || nom) {
+          usuarios.push({ id_usuario: idU, nombre: nom, email: mail, area: area, dni: dni });
+        }
       }
     }
   }
