@@ -552,6 +552,7 @@ class GoogleService:
 
         for tab_name in CATALOG_TABS:
             try:
+                time.sleep(0.35)
                 ws = sh.worksheet(tab_name)
                 rows = ws.get_all_records()
                 
@@ -1295,6 +1296,8 @@ class GoogleService:
                             missing = [c for c in REGISTRO_GASTOS_COLUMNS if c not in headers]
                             if missing:
                                 logger.info(f"Ampliando encabezados de '{SHEET_REGISTRO_GASTOS_TAB}' con: {missing}")
+                                if ws.col_count < len(headers) + len(missing):
+                                    ws.add_cols(len(missing) + 2)
                                 for col_name in missing:
                                     ws.update_cell(1, len(headers) + 1, col_name)
                                     headers.append(col_name)
@@ -1433,7 +1436,7 @@ class GoogleService:
         all_records = []
         if ws:
             try:
-                all_records = ws.get_all_records(expected_headers=REGISTRO_GASTOS_COLUMNS)
+                all_records = ws.get_all_records()
             except Exception as e:
                 logger.warning(f"No se pudo consultar Sheets para retorno: {e}")
 
@@ -1587,7 +1590,7 @@ class GoogleService:
             return get_viajes_activos_local()
 
         try:
-            records = ws.get_all_records(expected_headers=REGISTRO_GASTOS_COLUMNS)
+            records = ws.get_all_records()
             viajes_map = {}
 
             for r in records:
@@ -1646,7 +1649,7 @@ class GoogleService:
         ws = self._get_or_create_registro_gastos_ws()
         if ws:
             try:
-                records = ws.get_all_records(expected_headers=REGISTRO_GASTOS_COLUMNS)
+                records = ws.get_all_records()
                 trip_records = [r for r in records if str(r.get("id_viaje")) == id_viaje]
                 if trip_records:
                     r0 = trip_records[0]
