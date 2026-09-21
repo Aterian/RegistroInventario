@@ -548,6 +548,24 @@ export const api = {
     }
   },
 
+  // Editar elementos de salida activa
+  editarSalida: async (idViaje, data) => {
+    const payload = { id_viaje: idViaje, ...data };
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.editar_salida) {
+      return await bridge.editar_salida(payload);
+    }
+    if (getGasUrl()) {
+      return await callGas('editarSalida', payload, 'POST');
+    }
+    const res = await fetch(`${getApiBaseUrl()}/viajes/${encodeURIComponent(idViaje)}/items`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleFetchResponse(res);
+  },
+
   // Retorno de viaje
   registrarRetorno: async (data) => {
     const bridge = await getDesktopBridge();

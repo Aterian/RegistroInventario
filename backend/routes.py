@@ -296,6 +296,21 @@ def registrar_salida(payload: SalidaRequest):
         logger.error(f"Error registrando salida de viaje: {e}")
         raise HTTPException(status_code=500, detail=f"Error al registrar salida: {str(e)}")
 
+@router.put("/viajes/{id_viaje}/items")
+def editar_items_salida(id_viaje: str, payload: Dict[str, Any]):
+    """
+    Modifica los elementos asignados a una salida activa.
+    Actualiza SQLite, Google Sheets y Kardex.
+    """
+    try:
+        items = payload.get("items", [])
+        user_s = payload.get("user_s")
+        res = google_service.editar_salida(id_viaje=id_viaje, items=items, user_s=user_s)
+        return res
+    except Exception as e:
+        logger.error(f"Error editando salida {id_viaje}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.post("/viajes/retorno")
 def registrar_retorno(payload: RetornoRequest):
     """

@@ -60,16 +60,19 @@ export const Navbar = ({
       top: 0,
       zIndex: 100,
     }}>
-      <div style={{
-        maxWidth: '1320px',
-        margin: '0 auto',
-        padding: '0.75rem 1rem',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: '0.75rem',
-      }}>
+      <div 
+        className="navbar-container"
+        style={{
+          maxWidth: '1320px',
+          margin: '0 auto',
+          padding: '0.75rem 1rem',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
+          gap: '0.75rem',
+        }}
+      >
         {/* Brand & Title */}
         <div 
           style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', cursor: 'pointer' }}
@@ -117,15 +120,18 @@ export const Navbar = ({
           </div>
         </div>
 
-        {/* Navigation Tabs */}
-        <nav style={{ 
-          display: 'flex', 
-          alignItems: 'center', 
-          gap: '0.35rem',
-          overflowX: 'auto',
-          maxWidth: '100%',
-          paddingBottom: '2px',
-        }}>
+        {/* Navigation Tabs (Desktop) */}
+        <nav 
+          className="desktop-nav"
+          style={{ 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.35rem',
+            overflowX: 'auto',
+            maxWidth: '100%',
+            paddingBottom: '2px',
+          }}
+        >
           <button
             onClick={() => setCurrentTab('inicio')}
             className={`btn btn-sm ${currentTab === 'inicio' ? 'btn-primary' : 'btn-secondary'}`}

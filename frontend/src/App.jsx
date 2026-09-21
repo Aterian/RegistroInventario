@@ -10,6 +10,8 @@ import { DashboardAlertas } from './components/DashboardAlertas';
 import { MovimientosViewer } from './components/MovimientosViewer';
 import { SolicitudesViewer } from './components/SolicitudesViewer';
 import { ViajeDetalleModal } from './components/ViajeDetalleModal';
+import { EditarSalidaModal } from './components/EditarSalidaModal';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { SettingsModal } from './components/SettingsModal';
 import { api } from './api';
 
@@ -26,6 +28,7 @@ export function App() {
   // Modales
   const [selectedViajeRetorno, setSelectedViajeRetorno] = useState(null);
   const [selectedViajeDetalle, setSelectedViajeDetalle] = useState(null);
+  const [selectedViajeEditar, setSelectedViajeEditar] = useState(null);
   const [isCatalogEditorOpen, setIsCatalogEditorOpen] = useState(false);
   const [elementoParaEditar, setElementoParaEditar] = useState(null);
   const [solicitudPreload, setSolicitudPreload] = useState(null);
@@ -154,6 +157,7 @@ export function App() {
             onNewSalida={() => setCurrentTab('salida')}
             onOpenRetorno={(v) => setSelectedViajeRetorno(v)}
             onOpenDetalle={(v) => setSelectedViajeDetalle(v)}
+            onOpenEditarSalida={(v) => setSelectedViajeEditar(v)}
           />
         )}
 
@@ -215,6 +219,25 @@ export function App() {
             setSelectedViajeDetalle(null);
             setSelectedViajeRetorno(v);
           }}
+          onOpenEditarSalida={(v) => {
+            setSelectedViajeDetalle(null);
+            setSelectedViajeEditar(v);
+          }}
+        />
+      )}
+
+      {/* Modal para Editar Ítems de Salida Registrada */}
+      {selectedViajeEditar && (
+        <EditarSalidaModal
+          isOpen={Boolean(selectedViajeEditar)}
+          onClose={() => setSelectedViajeEditar(null)}
+          viaje={selectedViajeEditar}
+          catalogos={catalogos}
+          onSuccess={() => {
+            setSelectedViajeEditar(null);
+            loadData(false);
+            showToast('Ítems de la salida actualizados correctamente', 'success');
+          }}
         />
       )}
 
@@ -257,6 +280,16 @@ export function App() {
           loadData(false);
           showToast('Servidor actualizado', 'success');
         }}
+      />
+
+      {/* Barra de Navegación Inferior Móvil (intuitiva y nativa) */}
+      <MobileBottomNav
+        currentTab={currentTab}
+        setCurrentTab={setCurrentTab}
+        onOpenSalida={() => setCurrentTab('salida')}
+        onOpenSettings={() => setIsSettingsOpen(true)}
+        viajesActivosCount={viajesActivos.length}
+        alertasCount={alertasCount}
       />
     </div>
   );

@@ -10,11 +10,12 @@ import {
   Clock, 
   ArrowRight, 
   FileCheck, 
-  Download 
+  Download,
+  Edit3
 } from 'lucide-react';
 import { api } from '../api';
 
-export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno }) => {
+export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno, onOpenEditarSalida }) => {
   if (!isOpen || !viaje) return null;
 
   const isActivo = !viaje.fecha_r;
@@ -247,7 +248,24 @@ export const ViajeDetalleModal = ({ isOpen, onClose, viaje, onOpenRetorno }) => 
             <Download size={16} /> Descargar Remito Oficial PDF
           </a>
 
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {isActivo && onOpenEditarSalida && (
+              <button 
+                onClick={() => { onClose(); onOpenEditarSalida(viaje); }}
+                className="btn btn-outline"
+                style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.4rem', 
+                  color: 'var(--accent-amber)', 
+                  borderColor: 'rgba(234, 179, 8, 0.35)' 
+                }}
+                title="Modificar elementos o cantidades registradas"
+              >
+                <Edit3 size={16} /> Modificar Ítems
+              </button>
+            )}
+
             {isActivo && onOpenRetorno && (
               <button 
                 onClick={() => { onClose(); onOpenRetorno(viaje); }}

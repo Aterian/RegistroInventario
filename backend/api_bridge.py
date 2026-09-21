@@ -29,7 +29,7 @@ from backend.database import (
 from backend.pdf_service import generate_remito_pdf
 
 logger = logging.getLogger("ingeap.api_bridge")
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.3.0"
 
 
 class ApiBridge:
@@ -275,6 +275,17 @@ class ApiBridge:
             return {"success": True, "id_viaje": id_viaje, "filas_creadas": len(filas)}
         except Exception as e:
             logger.error(f"[ApiBridge] Error en registrar_salida: {e}")
+            return {"success": False, "error": str(e)}
+
+    def editar_salida(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Modifica los elementos asignados a una salida activa."""
+        try:
+            id_viaje = data.get("id_viaje")
+            items = data.get("items", [])
+            user_s = data.get("user_s")
+            return google_service.editar_salida(id_viaje=id_viaje, items=items, user_s=user_s)
+        except Exception as e:
+            logger.error(f"[ApiBridge] Error en editar_salida: {e}")
             return {"success": False, "error": str(e)}
 
     def registrar_retorno(self, data: Dict[str, Any]) -> Dict[str, Any]:

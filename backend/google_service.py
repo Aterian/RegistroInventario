@@ -37,6 +37,7 @@ from backend.database import (
     get_proyectos_usuarios_cache_local,
     save_viaje_salida_local,
     save_viaje_retorno_local,
+    update_viaje_items_local,
     mark_viaje_as_synced,
     get_viajes_activos_local,
     get_viaje_by_id_local,
@@ -1443,6 +1444,83 @@ class GoogleService:
                 logger.error(f"Error escribiendo en Google Sheets: {e}. Queda en base local.")
 
         return filas_generadas
+
+    def editar_salida(
+        self,
+        id_viaje: str,
+        items: List[Dict[str, Any]],
+        user_s: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Modifica los elementos asignados a una salida activa y sincroniza los cambios."""
+        # 1. Actualizar en SQLite local
+        res = update_viaje_items_local(id_viaje=id_viaje, items=items, user_s=user_s)
+        filas_generadas = res.get("filas", [])
+
+        # 2. Registrar en Kardex
+        proyectos_str = ", ".join(list(set([f.get("proyecto", "") for f in filas_generadas if f.get("proyecto")])))
+        for item in items:
+            tipo = item.get("tipo") or item.get("categoria") or ""
+            elemento = item.get("elemento") or item.get("nombre") or ""
+            cod = item.get("codigo_interno") or ""
+            if cod and cod not in elemento:
+                elemento = f"[{cod}] {elemento}"
+            unidad_s = float(item.get("unidad_s", 0.0) or 0.0)
+            self.registrar_movimiento({
+                "tipo_movimiento": "Ajuste Salida",
+                "id_elemento": item.get("id", ""),
+                "categoria": tipo,
+                "elemento": elemento,
+                "codigo_interno": cod,
+                "cantidad": unidad_s,
+                "id_viaje": id_viaje,
+                "proyecto": proyectos_str,
+                "usuario": user_s or "",
+                "observaciones": f"Edición/ajuste de salida viaje {id_viaje[:8]}"
+            })
+
+        # 3. Sincronizar en Google Sheets (si está conectado)
+        ws = self._get_or_create_registro_gastos_ws()
+        if ws:
+            try:
+                headers = ws.row_values(1)
+                header_to_idx = {h.lower().strip(): i for i, h in enumerate(headers)}
+                all_values = ws.get_all_values()
+                if len(all_values) > 1:
+                    idx_id_viaje = header_to_idx.get("id_viaje", -1)
+                    idx_fecha_r = header_to_idx.get("fecha_r", -1)
+                    
+                    rows_to_delete = []
+                    for i in range(1, len(all_values)):
+                        row = all_values[i]
+                        r_id = row[idx_id_viaje] if idx_id_viaje < len(row) else ""
+                        r_fr = row[idx_fecha_r] if idx_fecha_r != -1 and idx_fecha_r < len(row) else ""
+                        if str(r_id).strip() == str(id_viaje).strip() and not str(r_fr).strip():
+                            rows_to_delete.append(i + 1)
+                    
+                    for r_idx in reversed(rows_to_delete):
+                        ws.delete_rows(r_idx)
+                
+                sheet_rows = []
+                for f in filas_generadas:
+                    row_vals = ["" for _ in range(len(headers))]
+                    for k, val in f.items():
+                        if k.lower() in header_to_idx:
+                            row_vals[header_to_idx[k.lower()]] = val
+                    sheet_rows.append(row_vals)
+                
+                if sheet_rows:
+                    ws.append_rows(sheet_rows)
+                mark_viaje_as_synced(id_viaje)
+                logger.info(f"Salida de viaje {id_viaje} editada y sincronizada en Google Sheets.")
+            except Exception as e:
+                logger.error(f"Error sincronizando edición en Google Sheets: {e}. Queda en base local.")
+
+        return {
+            "success": True,
+            "id_viaje": id_viaje,
+            "items_count": len(items),
+            "filas_actualizadas": len(filas_generadas)
+        }
 
     def registrar_retorno(
         self,

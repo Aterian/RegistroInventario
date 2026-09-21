@@ -363,3 +363,36 @@ h1, h2, h3, h4, .brand-font {
     padding: 1rem 1.25rem;
   }
 }
+
+/* Responsive Navigation (Mobile Bottom Nav vs Desktop Top Nav) */
+.desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  overflow-x: auto;
+  max-width: 100%;
+  padding-bottom: 2px;
+}
+
+.mobile-bottom-nav {
+  display: none !important;
+}
+
+@media (max-width: 768px) {
+  .desktop-nav {
+    display: none !important;
+  }
+  
+  .mobile-bottom-nav {
+    display: flex !important;
+  }
+
+  .main-content {
+    padding-bottom: 5.5rem !important;
+  }
+
+  .navbar-container {
+    padding: 0.5rem 0.75rem !important;
+  }
+}
+

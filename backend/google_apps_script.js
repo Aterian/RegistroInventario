@@ -116,6 +116,10 @@ function handleRequest(e, method) {
         result = registrarSalida(postData);
         break;
 
+      case "editarSalida":
+        result = editarSalida(postData);
+        break;
+
       case "registrarRetorno":
         result = registrarRetorno(postData);
         break;
@@ -187,8 +191,22 @@ function handleRequest(e, method) {
 // IMPLEMENTACIÓN DE ACCIONES
 // ----------------------------------------------------------------------
 
+function findSheetCaseInsensitive(ss, candidates) {
+  if (!ss) return null;
+  const sheets = ss.getSheets();
+  for (let cand of candidates) {
+    const candNorm = cand.toLowerCase().replace(/[\s_\-]/g, "");
+    for (let s of sheets) {
+      const sNorm = s.getName().toLowerCase().replace(/[\s_\-]/g, "");
+      if (sNorm === candNorm) return s;
+    }
+  }
+  return null;
+}
+
 function getEstado() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cat = getCatalogos();
   return {
     estado: "ONLINE",
     google_connected: true,
@@ -198,6 +216,9 @@ function getEstado() {
     local_db_ok: false,
     modo: "Google Apps Script Cloud (Independiente 24/7)",
     nombre_libro: ss.getName(),
+    total_inventario: cat.inventario ? cat.inventario.length : 0,
+    total_proyectos: cat.proyectos ? cat.proyectos.length : 0,
+    total_usuarios: cat.usuarios ? cat.usuarios.length : 0,
     timestamp: new Date().toISOString()
   };
 }
@@ -209,7 +230,7 @@ function getCatalogos() {
 
   // 1. Leer hojas de catálogo
   CATALOG_TABS.forEach(tabName => {
-    const sheet = ss.getSheetByName(tabName);
+    const sheet = ss.getSheetByName(tabName) || findSheetCaseInsensitive(ss, [tabName]);
     if (!sheet) return;
 
     const data = sheet.getDataRange().getValues();
@@ -270,22 +291,28 @@ function getCatalogos() {
         es_dron: isDron,
         raw: rowObj
       });
-
     }
   });
 
-  // 2. Leer proyectos y usuarios
-  let sheetProy = ss.getSheetByName("proyectos_activos") || ss.getSheetByName("0_proyectos");
-  let sheetUsu = ss.getSheetByName("usuarios") || ss.getSheetByName("0_usuarios");
+  // 2. Leer proyectos y usuarios directamente de la hoja activa (Inventario v1.5 - Dev)
+  let sheetProy = findSheetCaseInsensitive(ss, ["proyectos_activos", "0_proyectos", "proyectos"]);
+  let sheetUsu = findSheetCaseInsensitive(ss, ["usuarios", "0_usuarios", "personal"]);
 
-  let ssRoster = null;
-  if ((!sheetProy || !sheetUsu) && ID_HOJA_ROSTER) {
-    try {
-      ssRoster = SpreadsheetApp.openById(ID_HOJA_ROSTER);
-      if (!sheetProy) sheetProy = ssRoster.getSheetByName("proyectos_activos") || ssRoster.getSheetByName("0_proyectos");
-      if (!sheetUsu) sheetUsu = ssRoster.getSheetByName("usuarios") || ssRoster.getSheetByName("0_usuarios");
-    } catch (e) {
-      // Continuar con ss principal
+  // Fallback secundario si estuvieran en otro libro (BBDD_asist_roster)
+  if (!sheetProy || !sheetUsu) {
+    let ssRoster = null;
+    if (ID_HOJA_ROSTER && ID_HOJA_ROSTER.trim()) {
+      try { ssRoster = SpreadsheetApp.openById(ID_HOJA_ROSTER.trim()); } catch(e) {}
+    }
+    if (!ssRoster) {
+      try {
+        const files = DriveApp.getFilesByName("BBDD_asist_roster");
+        if (files.hasNext()) ssRoster = SpreadsheetApp.open(files.next());
+      } catch(e) {}
+    }
+    if (ssRoster) {
+      if (!sheetProy) sheetProy = findSheetCaseInsensitive(ssRoster, ["proyectos_activos", "0_proyectos", "proyectos"]);
+      if (!sheetUsu) sheetUsu = findSheetCaseInsensitive(ssRoster, ["usuarios", "0_usuarios", "personal"]);
     }
   }
 
@@ -294,16 +321,24 @@ function getCatalogos() {
     const dataP = sheetProy.getDataRange().getValues();
     if (dataP.length > 1) {
       const headersP = dataP[0].map(h => String(h).trim().toLowerCase());
-      const idxId = headersP.indexOf("id_proyecto") !== -1 ? headersP.indexOf("id_proyecto") : 0;
-      const idxDenom = headersP.indexOf("denominacion") !== -1 ? headersP.indexOf("denominacion") : (headersP.indexOf("nombre") !== -1 ? headersP.indexOf("nombre") : 1);
-      const idxArea = headersP.indexOf("area") !== -1 ? headersP.indexOf("area") : 2;
+      let idxId = headersP.indexOf("id_proyecto");
+      if (idxId === -1) idxId = headersP.indexOf("id");
+      if (idxId === -1) idxId = 0;
+
+      let idxDenom = headersP.indexOf("denominacion");
+      if (idxDenom === -1) idxDenom = headersP.indexOf("nombre");
+      if (idxDenom === -1) idxDenom = headersP.indexOf("proyecto");
+      if (idxDenom === -1) idxDenom = 1;
+
+      let idxArea = headersP.indexOf("area");
+      if (idxArea === -1) idxArea = 2;
 
       for (let i = 1; i < dataP.length; i++) {
         const idP = String(dataP[i][idxId] || "").trim();
         const denom = String(dataP[i][idxDenom] || "").trim();
         const area = String(dataP[i][idxArea] || "").trim();
         if (idP || denom) {
-          proyectos.push({ id_proyecto: idP, denominacion: denom, area: area });
+          proyectos.push({ id_proyecto: idP || denom, denominacion: denom || idP, area: area });
         }
       }
     }
@@ -314,11 +349,24 @@ function getCatalogos() {
     const dataU = sheetUsu.getDataRange().getValues();
     if (dataU.length > 1) {
       const headersU = dataU[0].map(h => String(h).trim().toLowerCase());
-      const idxId = headersU.indexOf("id_usuario") !== -1 ? headersU.indexOf("id_usuario") : 0;
-      const idxNom = headersU.indexOf("nombre") !== -1 ? headersU.indexOf("nombre") : 1;
-      const idxMail = headersU.indexOf("email") !== -1 ? headersU.indexOf("email") : (headersU.indexOf("mail") !== -1 ? headersU.indexOf("mail") : 2);
-      const idxArea = headersU.indexOf("area") !== -1 ? headersU.indexOf("area") : 3;
-      const idxDni = headersU.indexOf("dni") !== -1 ? headersU.indexOf("dni") : 4;
+      let idxId = headersU.indexOf("id_usuario");
+      if (idxId === -1) idxId = headersU.indexOf("id");
+      if (idxId === -1) idxId = 0;
+
+      let idxNom = headersU.indexOf("nombre");
+      if (idxNom === -1) idxNom = headersU.indexOf("nombre_apellido");
+      if (idxNom === -1) idxNom = headersU.indexOf("empleado");
+      if (idxNom === -1) idxNom = 1;
+
+      let idxMail = headersU.indexOf("email");
+      if (idxMail === -1) idxMail = headersU.indexOf("mail");
+      if (idxMail === -1) idxMail = 2;
+
+      let idxArea = headersU.indexOf("area");
+      if (idxArea === -1) idxArea = 3;
+
+      let idxDni = headersU.indexOf("dni");
+      if (idxDni === -1) idxDni = 4;
 
       for (let i = 1; i < dataU.length; i++) {
         const idU = String(dataU[i][idxId] || "").trim();
@@ -327,7 +375,7 @@ function getCatalogos() {
         const area = String(dataU[i][idxArea] || "").trim();
         const dni = String(dataU[i][idxDni] || "").trim();
         if (idU || nom) {
-          usuarios.push({ id_usuario: idU, nombre: nom, email: mail, area: area, dni: dni });
+          usuarios.push({ id_usuario: idU || nom, nombre: nom || idU, email: mail, area: area, dni: dni });
         }
       }
     }
@@ -488,6 +536,133 @@ function registrarSalida(data) {
   }
 
   return { success: true, id_viaje: idViaje, filas_creadas: rowsToAdd.length };
+}
+
+function editarSalida(data) {
+  const idViaje = data.id_viaje;
+  if (!idViaje) return { success: false, error: "ID de viaje no proporcionado" };
+
+  const items = data.items || [];
+  if (items.length === 0) return { success: false, error: "La salida debe contener al menos un elemento" };
+
+  const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const allData = sheet.getDataRange().getValues();
+  if (allData.length < 2) return { success: false, error: "No hay registros cargados" };
+
+  const headers = allData[0].map(h => String(h).trim().toLowerCase());
+  const colIndex = (name) => headers.indexOf(name.toLowerCase());
+  const idxIdViaje = colIndex("id_viaje");
+  const idxFechaR = colIndex("fecha_r");
+  const idxIdProy = colIndex("id_proyecto");
+  const idxProy = colIndex("proyecto");
+  const idxFechaS = colIndex("fecha_s");
+  const idxUserS = colIndex("user_s");
+  const idxFirmaS = colIndex("firma_s");
+  const idxFechaHoraS = colIndex("fecha_hora_s");
+
+  // 1. Extraer los proyectos y metadatos del viaje existente
+  const proyectosMap = {};
+  let fechaS = "";
+  let userS = data.user_s || "";
+  let firmaS = "";
+  let fechaHoraS = "";
+
+  const rowsToDelete = [];
+  for (let i = 1; i < allData.length; i++) {
+    const row = allData[i];
+    if (String(row[idxIdViaje]) === String(idViaje)) {
+      const fR = String(row[idxFechaR] || "").trim();
+      if (fR) {
+        return { success: false, error: "No se puede editar un viaje que ya ha sido retornado/liquidado" };
+      }
+      const pId = String(row[idxIdProy] || "").trim();
+      const pNom = String(row[idxProy] || "").trim();
+      if (pId || pNom) {
+        proyectosMap[pId || pNom] = { id_proyecto: pId, denominacion: pNom };
+      }
+      if (!fechaS) fechaS = String(row[idxFechaS] || "");
+      if (!userS && idxUserS !== -1) userS = String(row[idxUserS] || "");
+      if (!firmaS && idxFirmaS !== -1) firmaS = String(row[idxFirmaS] || "");
+      if (!fechaHoraS && idxFechaHoraS !== -1) fechaHoraS = String(row[idxFechaHoraS] || "");
+      rowsToDelete.push(i + 1); // 1-indexed row in sheet
+    }
+  }
+
+  if (rowsToDelete.length === 0) {
+    return { success: false, error: "Viaje activo no encontrado" };
+  }
+
+  const proyectos = Object.values(proyectosMap);
+  const nowIso = new Date().toISOString();
+  if (!fechaS) fechaS = Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+
+  // 2. Eliminar filas antiguas de abajo hacia arriba para mantener consistencia de índices
+  for (let r = rowsToDelete.length - 1; r >= 0; r--) {
+    sheet.deleteRow(rowsToDelete[r]);
+  }
+
+  // 3. Generar y anexar nuevas filas para los ítems editados
+  const sheetHeaders = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim().toLowerCase());
+  const rowsToAdd = [];
+
+  items.forEach(it => {
+    const tipo = it.tipo || it.categoria || "";
+    let elem = it.elemento || it.nombre || "";
+    if (it.codigo_interno && elem.indexOf(it.codigo_interno) === -1) {
+      elem = "[" + it.codigo_interno + "] " + elem;
+    }
+    const unidadS = Number(it.unidad_s || 0);
+    const costoU = Number(it.costo_u || 0);
+    const uMedida = it.unidad_medida || calcularUnidadMedidaGas(tipo, elem, it.modo_costeo || "");
+
+    proyectos.forEach(proj => {
+      const idGasto = Utilities.getUuid();
+      const rowDict = {
+        "id_gasto": idGasto,
+        "id_viaje": idViaje,
+        "id_proyecto": String(proj.id_proyecto || ""),
+        "proyecto": String(proj.denominacion || ""),
+        "tipo": tipo,
+        "elemento": elem,
+        "fecha_s": fechaS,
+        "fecha_r": "",
+        "unidad_s": unidadS,
+        "unidad_r": 0,
+        "costo_u": costoU,
+        "costo_t": 0,
+        "user_s": userS,
+        "firma_s": firmaS,
+        "user_r": "",
+        "firma_r": "",
+        "fecha_hora_s": fechaHoraS || nowIso,
+        "fecha_hora_r": "",
+        "unidad_medida": uMedida,
+        "fecha_hora": nowIso
+      };
+      const rowArr = sheetHeaders.map(h => (rowDict[h] !== undefined ? rowDict[h] : ""));
+      rowsToAdd.push(rowArr);
+    });
+
+    // Auditoría en movimientos de stock
+    registrarMovimiento({
+      tipo_movimiento: "Ajuste Salida",
+      id_elemento: it.id || "",
+      categoria: tipo,
+      elemento: elem,
+      codigo_interno: it.codigo_interno || "",
+      cantidad: unidadS,
+      id_viaje: idViaje,
+      proyecto: proyectos.map(p => p.denominacion).join(", "),
+      usuario: userS,
+      observaciones: "Edición/ajuste de salida viaje " + idViaje.substring(0, 8)
+    });
+  });
+
+  if (rowsToAdd.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, rowsToAdd.length, rowsToAdd[0].length).setValues(rowsToAdd);
+  }
+
+  return { success: true, id_viaje: idViaje, items_count: items.length, filas_actualizadas: rowsToAdd.length };
 }
 
 function registrarRetorno(data) {

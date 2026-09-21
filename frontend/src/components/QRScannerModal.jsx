@@ -20,6 +20,10 @@ export const QRScannerModal = ({ isOpen, onClose, onScanSuccess, title = "Escane
 
       const timer = setTimeout(async () => {
         try {
+          if (typeof window !== 'undefined' && window.isSecureContext === false && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+            throw new Error('SECURE_CONTEXT_REQUIRED');
+          }
+
           const qrScanner = new Html5Qrcode(scannerContainerId);
           html5QrCodeRef.current = qrScanner;
 
@@ -29,22 +33,49 @@ export const QRScannerModal = ({ isOpen, onClose, onScanSuccess, title = "Escane
             aspectRatio: 1.0,
           };
 
-          await qrScanner.start(
-            { facingMode: "environment" },
-            config,
-            (decodedText) => {
-              if (!isMounted) return;
-              handleSuccess(decodedText);
-            },
-            (errorMessage) => {
-              // lectura en curso (errores de frame ignorados)
+          // Intentar primero con cámara trasera
+          try {
+            await qrScanner.start(
+              { facingMode: { ideal: "environment" } },
+              config,
+              (decodedText) => {
+                if (!isMounted) return;
+                handleSuccess(decodedText);
+              },
+              () => {}
+            );
+          } catch (firstErr) {
+            // Fallback: listar cámaras disponibles y tomar la última (suele ser la trasera en Android) o la primera
+            const devices = await Html5Qrcode.getCameras();
+            if (devices && devices.length > 0) {
+              const backCam = devices.find(d => (d.label || '').toLowerCase().includes('back') || (d.label || '').toLowerCase().includes('trasera')) || devices[devices.length - 1];
+              await qrScanner.start(
+                backCam.id,
+                config,
+                (decodedText) => {
+                  if (!isMounted) return;
+                  handleSuccess(decodedText);
+                },
+                () => {}
+              );
+            } else {
+              throw firstErr;
             }
-          );
+          }
           if (isMounted) setIsScanning(true);
         } catch (err) {
           if (isMounted) {
             console.warn("No se pudo iniciar la cámara para QR:", err);
-            setCameraError("No se pudo acceder a la cámara. Por favor asegúrese de otorgar permisos o use el ingreso manual de código.");
+            const errStr = String(err?.message || err?.name || err);
+            if (errStr.includes('SECURE_CONTEXT_REQUIRED')) {
+              setCameraError("El navegador bloquea la cámara por conexión no segura (HTTP). Use la App Android instalada o use el ingreso manual de código.");
+            } else if (err?.name === 'NotAllowedError' || errStr.toLowerCase().includes('permission') || errStr.toLowerCase().includes('denied') || errStr.toLowerCase().includes('not allowed')) {
+              setCameraError("Permiso de cámara denegado en Android. Por favor vaya a Ajustes > Aplicaciones > Ingeap Inventario > Permisos y active la Cámara.");
+            } else if (err?.name === 'NotFoundError' || errStr.toLowerCase().includes('notfound')) {
+              setCameraError("No se detectó ninguna cámara en este dispositivo. Use el ingreso manual de código.");
+            } else {
+              setCameraError("No se pudo acceder a la cámara. Verifique los permisos en el celular o use el ingreso manual.");
+            }
             setIsScanning(false);
           }
         }

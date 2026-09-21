@@ -301,6 +301,120 @@ def save_viaje_retorno_local(
     finally:
         conn.close()
 
+def update_viaje_items_local(
+    id_viaje: str,
+    items: List[Dict[str, Any]],
+    user_s: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Actualiza la lista de elementos asignados a una salida activa en SQLite.
+    Elimina los registros no devueltos anteriores de este viaje y regenera las filas
+    distribuidas entre los proyectos asignados.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        # 1. Obtener datos del viaje existente
+        cursor.execute("SELECT * FROM viajes WHERE id_viaje = ?", (id_viaje,))
+        viaje_row = cursor.fetchone()
+        if not viaje_row:
+            raise ValueError(f"Viaje {id_viaje} no encontrado")
+        
+        viaje = dict(viaje_row)
+        if viaje.get("fecha_r"):
+            raise ValueError("No se puede editar un viaje que ya ha sido liquidado/retornado")
+
+        proyectos = []
+        if viaje.get("proyectos_json"):
+            try:
+                proyectos = json.loads(viaje["proyectos_json"])
+            except Exception:
+                proyectos = []
+        
+        if not proyectos:
+            cursor.execute("SELECT DISTINCT id_proyecto, proyecto FROM gastos_detalle WHERE id_viaje = ?", (id_viaje,))
+            p_rows = cursor.fetchall()
+            for pr in p_rows:
+                proyectos.append({"id_proyecto": pr["id_proyecto"], "denominacion": pr["proyecto"]})
+
+        fecha_s = viaje.get("fecha_s") or now_iso
+        firma_s = viaje.get("firma_s") or ""
+        resp_s = user_s or viaje.get("user_s") or ""
+
+        # 2. Eliminar filas no retornadas anteriores
+        cursor.execute("DELETE FROM gastos_detalle WHERE id_viaje = ? AND (fecha_r IS NULL OR fecha_r = '')", (id_viaje,))
+
+        # 3. Insertar nuevas filas
+        filas_generadas = []
+        import uuid
+        for it in items:
+            tipo = it.get("tipo") or it.get("categoria") or ""
+            elemento = it.get("elemento") or it.get("nombre") or ""
+            cod = it.get("codigo_interno") or ""
+            if cod and cod not in elemento:
+                elemento = f"[{cod}] {elemento}"
+            unidad_s = float(it.get("unidad_s", 0.0) or 0.0)
+            costo_u = float(it.get("costo_u", 0.0) or 0.0)
+            u_m = it.get("unidad_medida") or ""
+
+            proys_iter = proyectos if proyectos else [{"id_proyecto": "", "denominacion": "General"}]
+            for proj in proys_iter:
+                id_gasto = str(uuid.uuid4())
+                fila = {
+                    "id_gasto": id_gasto,
+                    "id_viaje": id_viaje,
+                    "id_proyecto": str(proj.get("id_proyecto", "")),
+                    "proyecto": str(proj.get("denominacion", "")),
+                    "tipo": tipo,
+                    "elemento": elemento,
+                    "fecha_s": fecha_s,
+                    "fecha_r": "",
+                    "unidad_s": unidad_s,
+                    "unidad_r": 0.0,
+                    "costo_u": costo_u,
+                    "costo_t": 0.0,
+                    "user_s": resp_s,
+                    "firma_s": firma_s,
+                    "user_r": "",
+                    "firma_r": "",
+                    "fecha_hora": now_iso,
+                    "fecha_hora_s": now_iso,
+                    "fecha_hora_r": "",
+                    "unidad_medida": u_m,
+                    "synced_sheets": 0
+                }
+                cursor.execute("""
+                    INSERT INTO gastos_detalle (
+                        id_gasto, id_viaje, id_proyecto, proyecto, tipo, elemento,
+                        fecha_s, fecha_r, unidad_s, unidad_r, costo_u, costo_t,
+                        user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, synced_sheets
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                """, (
+                    fila["id_gasto"], fila["id_viaje"], fila["id_proyecto"], fila["proyecto"],
+                    fila["tipo"], fila["elemento"], fila["fecha_s"], fila["fecha_r"],
+                    fila["unidad_s"], fila["unidad_r"], fila["costo_u"], fila["costo_t"],
+                    fila["user_s"], fila["firma_s"], fila["user_r"], fila["firma_r"],
+                    fila["fecha_hora"], fila["fecha_hora_s"], fila["fecha_hora_r"], fila["unidad_medida"]
+                ))
+                filas_generadas.append(fila)
+
+        # 4. Actualizar cabecera del viaje
+        cursor.execute("UPDATE viajes SET user_s = ?, updated_at = ?, synced_sheets = 0 WHERE id_viaje = ?", (resp_s, now_iso, id_viaje))
+        conn.commit()
+        return {
+            "success": True,
+            "id_viaje": id_viaje,
+            "filas": filas_generadas,
+            "items_count": len(items)
+        }
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error al actualizar items de viaje {id_viaje} en SQLite: {e}")
+        raise
+    finally:
+        conn.close()
+
 def mark_viaje_as_synced(id_viaje: str) -> None:
     """Marca un viaje y sus detalles como sincronizados con Google Sheets."""
     conn = get_db_connection()

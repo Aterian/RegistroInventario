@@ -65,37 +65,41 @@ jobs:
 
       - name: Preparar archivo APK final
         run: |
-          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk ./Ingeap-Inventario-v1.2.0.apk
+          VERSION="${GITHUB_REF_NAME:-v1.3.0}"
+          APK_NAME="Ingeap-Inventario-${VERSION}.apk"
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk ./${APK_NAME}
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk ./Ingeap-Inventario.apk
+          echo "APK_NAME=${APK_NAME}" >> $GITHUB_ENV
 
       - name: Publicar artefacto APK en Actions
         uses: actions/upload-artifact@v4
         with:
           name: Ingeap-Inventario-APK
-          path: Ingeap-Inventario-v1.2.0.apk
+          path: ${{ env.APK_NAME }}
           retention-days: 30
 
       - name: Publicar Release en GitHub (Descarga directa para celular)
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.crear_release == true)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.2.0-mobile' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.2.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.3.0' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.3.0' }}
           body: |
-            ### 📱 Ingeap Inventario para Celular (Android) - v1.2.0
+            ### 📱 Ingeap Inventario para Celular (Android) - v1.3.0
             
             - **Novedades de esta versión:**
-              - 🏠 **Menú Inicial:** Pantalla de bienvenida con accesos rápidos a todos los módulos.
-              - 📷 **Lector QR Integrado:** Escaneo instantáneo de códigos de barras y QR con la cámara del teléfono en salidas.
-              - 🏷️ **Etiquetas QR Imprimibles:** Generación de etiquetas en alta resolución y descarga de PDF para rotular equipos.
-              - ⚠️ **Control de Mantenimiento:** Alertas visuales para instrumental en calibración/mantenimiento (sin bloqueo de salida).
-              - ⏱️ **Costeo Inteligente:** Soporte de días de uso para adicionales (bastones, trípodes) e instrumental, km para movilidad, ciclos de batería y cantidad para materiales.
-              - 📦 **Ajuste Directo de Stock:** Modificación directa de stock físico para materiales, indumentaria y herramientas.
-              - 🛒 **Solicitudes de Compra:** Selector clasificado por Áreas Operativas y Empleados de Ingeap.
-              - 🔧 **Kardex y Repuestos:** Selección de ítems de catálogo y asignación a equipos/vehículos de destino.
-              - ☁️ **Conexión 24/7:** Opera de forma autónoma conectado a Google Cloud sin requerir la PC encendida.
+              - 🎨 **Ícono Oficial de Ingeap:** Ícono nativo adaptativo en alta resolución para el launcher del teléfono.
+              - 📱 **Nuevo Menú Móvil Intuitivo:** Barra de navegación inferior ergonómica al alcance del pulgar (Inicio, Viajes, botón central destacado de Salida, Catálogo y menú Más).
+              - 👥 **Listado de Proyectos y Usuarios:** Lectura directa y rápida desde las hojas `usuarios` y `proyectos_activos` de la planilla maestra.
+              - 📷 **Corrección de Permisos de Cámara:** Acceso nativo habilitado en AndroidManifest para escaneo QR de herramientas e instrumental.
+              - ✏️ **Edición de Salidas Registradas:** Permite corregir o agregar ítems en viajes activos sin perder firmas ni fechas de salida.
             
-            **Instalación:** Descarga el archivo adjunto `Ingeap-Inventario-v1.2.0.apk` directamente en tu celular y tócalo para actualizar.
-          files: Ingeap-Inventario-v1.2.0.apk
+            **Instalación en celular:**
+            1. Descarga el archivo APK adjunto abajo directamente en tu teléfono.
+            2. Toca el archivo descargado para instalar o actualizar la aplicación.
+          files: |
+            ${{ env.APK_NAME }}
+            Ingeap-Inventario.apk
           draft: false
           prerelease: false
         env:

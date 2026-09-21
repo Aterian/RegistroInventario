@@ -4,6 +4,23 @@ Historial cronológico de versiones, mejoras y correcciones implementadas en el 
 
 ---
 
+## [1.3.0] - 2026-09-21
+
+### 📱 Optimización Móvil, Permisos y Edición de Salidas
+- 🎨 **Ícono de la Empresa como Identidad de la App:**
+  - Generación de todos los assets de launcher adaptativos para Android (`ic_launcher.png`, `ic_launcher_round.png`, `ic_launcher_foreground.png`) y favicons web con el logo oficial de Ingeap.
+- 📱 **Nuevo Menú Móvil Intuitivo y Ergonómico:**
+  - Incorporación de `MobileBottomNav` en pantallas de teléfono: barra inferior con botones de fácil alcance para el pulgar (Inicio, Viajes con contador dinámico de activos, botón central flotante destacado "+ Salida", Catálogo y menú extensible "Más").
+- 👥 **Listado de Personal y Proyectos Integrado:**
+  - Modificación de la API Google Apps Script y del servicio Python para consultar directamente las tablas `usuarios` y `proyectos_activos` de la hoja `Inventario v1.5 - Dev`, resolviendo la carga en el formulario de salidas móviles.
+- 📷 **Resolución de Permisos de Cámara en Android:**
+  - Inclusión de permisos explícitos en `AndroidManifest.xml` (`android.permission.CAMERA` y hardware camera) para permitir el escaneo QR sin bloqueos en el celular.
+- ✏️ **Edición de Ítems en Salidas Registradas (PC y Celular):**
+  - Nuevo modal `EditarSalidaModal` accesible desde el Dashboard y la vista de Detalle de Viaje.
+  - Permite corregir cantidades, retirar ítems cargados erróneamente o agregar nuevos elementos (búsqueda y QR) en salidas activas, conservando firmas, fechas y proyectos asociados.
+
+---
+
 ## [1.2.0] - 2026-09-20
 
 ### ✨ Nuevas Funcionalidades y Experiencia de Usuario (14 Mejoras)

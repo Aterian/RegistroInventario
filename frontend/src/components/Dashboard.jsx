@@ -13,7 +13,8 @@ import {
   ExternalLink,
   Eye,
   History,
-  RefreshCw
+  RefreshCw,
+  Edit3
 } from 'lucide-react';
 import { api } from '../api';
 
@@ -22,7 +23,8 @@ export const Dashboard = ({
   loading, 
   onNewSalida, 
   onOpenRetorno,
-  onOpenDetalle
+  onOpenDetalle,
+  onOpenEditarSalida
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [vista, setVista] = useState('activos'); // 'activos' | 'historial'
@@ -309,6 +311,25 @@ export const Dashboard = ({
                       title="Ver lista completa de elementos, firmas y costos"
                     >
                       <Eye size={14} /> Ver Ítems
+                    </button>
+                  )}
+
+                  {!isFinished && onOpenEditarSalida && (
+                    <button
+                      onClick={() => onOpenEditarSalida(viaje)}
+                      className="btn btn-sm btn-outline"
+                      style={{ 
+                        flex: 1, 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        justifyContent: 'center', 
+                        gap: '0.3rem', 
+                        color: 'var(--accent-amber)', 
+                        borderColor: 'rgba(234, 179, 8, 0.35)' 
+                      }}
+                      title="Modificar elementos o cantidades de esta salida"
+                    >
+                      <Edit3 size={14} /> Editar
                     </button>
                   )}
 
