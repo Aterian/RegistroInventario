@@ -100,6 +100,10 @@ function handleRequest(e, method) {
         result = getCatalogos();
         break;
 
+      case "getProyectosYUsuarios":
+        result = getProyectosYUsuarios();
+        break;
+
       case "getViajesActivos":
         result = getViajesActivos();
         break;
@@ -191,6 +195,20 @@ function handleRequest(e, method) {
 // IMPLEMENTACIÓN DE ACCIONES
 // ----------------------------------------------------------------------
 
+const SPREADSHEET_ID_DEFAULT = "1Eme9Rf6g9wqfv4-1_Lq8_MaKKYKYYhFTkIC7R6xnWbM";
+
+function getActiveOrOpenSpreadsheet() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (ss) return ss;
+  } catch(e) {}
+  try {
+    return SpreadsheetApp.openById(SPREADSHEET_ID_DEFAULT);
+  } catch(e) {
+    throw new Error("No se pudo abrir el libro 'Inventario v1.5 - Dev' (ID: " + SPREADSHEET_ID_DEFAULT + "): " + e.toString());
+  }
+}
+
 function findSheetCaseInsensitive(ss, candidates) {
   if (!ss) return null;
   const sheets = ss.getSheets();
@@ -205,8 +223,17 @@ function findSheetCaseInsensitive(ss, candidates) {
 }
 
 function getEstado() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const cat = getCatalogos();
+  const ss = getActiveOrOpenSpreadsheet();
+  let countProy = 0;
+  let countUsu = 0;
+  try {
+    const sP = ss.getSheetByName("proyectos_activos") || findSheetCaseInsensitive(ss, ["proyectos_activos", "proyectos", "0_proyectos"]);
+    if (sP) countProy = Math.max(0, sP.getLastRow() - 1);
+  } catch(e) {}
+  try {
+    const sU = ss.getSheetByName("usuarios") || findSheetCaseInsensitive(ss, ["usuarios", "personal", "0_usuarios"]);
+    if (sU) countUsu = Math.max(0, sU.getLastRow() - 1);
+  } catch(e) {}
   return {
     estado: "ONLINE",
     google_connected: true,
@@ -215,184 +242,196 @@ function getEstado() {
     drive_connected: true,
     local_db_ok: false,
     modo: "Google Apps Script Cloud (Independiente 24/7)",
-    nombre_libro: ss.getName(),
-    total_inventario: cat.inventario ? cat.inventario.length : 0,
-    total_proyectos: cat.proyectos ? cat.proyectos.length : 0,
-    total_usuarios: cat.usuarios ? cat.usuarios.length : 0,
+    nombre_libro: ss ? ss.getName() : "Inventario v1.5 - Dev",
+    total_proyectos: countProy,
+    total_usuarios: countUsu,
     timestamp: new Date().toISOString()
   };
 }
 
+function getProyectosYUsuarios() {
+  const ss = getActiveOrOpenSpreadsheet();
+  const proyectos = [];
+  const usuarios = [];
+
+  // 1. Proyectos
+  try {
+    const sheetProy = ss.getSheetByName("proyectos_activos") || findSheetCaseInsensitive(ss, ["proyectos_activos", "0_proyectos", "proyectos"]);
+    if (sheetProy) {
+      const dataP = sheetProy.getDataRange().getValues();
+      if (dataP.length > 1) {
+        const headersP = dataP[0].map(h => String(h).trim().toLowerCase());
+        let idxId = headersP.indexOf("id_proyecto");
+        if (idxId === -1) idxId = headersP.indexOf("id");
+        if (idxId === -1) idxId = 0;
+
+        let idxDenom = headersP.indexOf("denominacion");
+        if (idxDenom === -1) idxDenom = headersP.indexOf("nombre");
+        if (idxDenom === -1) idxDenom = headersP.indexOf("proyecto");
+        if (idxDenom === -1) idxDenom = 1;
+
+        let idxArea = headersP.indexOf("area");
+        if (idxArea === -1) idxArea = 2;
+
+        for (let i = 1; i < dataP.length; i++) {
+          const idP = String(dataP[i][idxId] || "").trim();
+          const denom = String(dataP[i][idxDenom] || "").trim();
+          const area = String(dataP[i][idxArea] || "").trim();
+          if (idP || denom) {
+            proyectos.push({ id_proyecto: idP || denom, denominacion: denom || idP, area: area });
+          }
+        }
+      }
+    }
+  } catch(errP) {
+    Logger.log("Error leyendo proyectos: " + errP);
+  }
+
+  // 2. Usuarios
+  try {
+    const sheetUsu = ss.getSheetByName("usuarios") || findSheetCaseInsensitive(ss, ["usuarios", "0_usuarios", "personal"]);
+    if (sheetUsu) {
+      const dataU = sheetUsu.getDataRange().getValues();
+      if (dataU.length > 1) {
+        const headersU = dataU[0].map(h => String(h).trim().toLowerCase());
+        let idxId = headersU.indexOf("id_usuario");
+        if (idxId === -1) idxId = headersU.indexOf("id");
+        if (idxId === -1) idxId = 0;
+
+        let idxNom = headersU.indexOf("nombre");
+        if (idxNom === -1) idxNom = headersU.indexOf("nombre_apellido");
+        if (idxNom === -1) idxNom = headersU.indexOf("empleado");
+        if (idxNom === -1) idxNom = 1;
+
+        let idxMail = headersU.indexOf("email");
+        if (idxMail === -1) idxMail = headersU.indexOf("mail");
+        if (idxMail === -1) idxMail = 2;
+
+        let idxArea = headersU.indexOf("area");
+        if (idxArea === -1) idxArea = 3;
+
+        let idxDni = headersU.indexOf("dni");
+        if (idxDni === -1) idxDni = 4;
+
+        for (let i = 1; i < dataU.length; i++) {
+          const idU = String(dataU[i][idxId] || "").trim();
+          const nom = String(dataU[i][idxNom] || "").trim();
+          const mail = String(dataU[i][idxMail] || "").trim();
+          const area = String(dataU[i][idxArea] || "").trim();
+          const dni = String(dataU[i][idxDni] || "").trim();
+          if (idU || nom) {
+            usuarios.push({ id_usuario: idU || nom, nombre: nom || idU, email: mail, area: area, dni: dni });
+          }
+        }
+      }
+    }
+  } catch(errU) {
+    Logger.log("Error leyendo usuarios: " + errU);
+  }
+
+  return { proyectos, usuarios, total_proyectos: proyectos.length, total_usuarios: usuarios.length };
+}
+
 function getCatalogos() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveOrOpenSpreadsheet();
   const inventario = [];
   const categoriasSet = {};
 
-  // 1. Leer hojas de catálogo
+  // 1. Leer hojas de catálogo de forma individual protegida
   CATALOG_TABS.forEach(tabName => {
-    const sheet = ss.getSheetByName(tabName) || findSheetCaseInsensitive(ss, [tabName]);
-    if (!sheet) return;
+    try {
+      const sheet = ss.getSheetByName(tabName) || findSheetCaseInsensitive(ss, [tabName]);
+      if (!sheet) return;
 
-    const data = sheet.getDataRange().getValues();
-    if (data.length < 2) return;
+      const data = sheet.getDataRange().getValues();
+      if (data.length < 2) return;
 
-    const headers = data[0].map(h => String(h).trim());
-    let catLimpia = tabName === "2_1_Instrumental_repuestos" ? "Repuestos" : tabName.split("_").pop();
-    categoriasSet[catLimpia] = true;
+      const headers = data[0].map(h => String(h).trim());
+      let catLimpia = tabName === "2_1_Instrumental_repuestos" ? "Repuestos" : tabName.split("_").pop();
+      categoriasSet[catLimpia] = true;
 
-    for (let i = 1; i < data.length; i++) {
-      const row = data[i];
-      const rowObj = {};
-      headers.forEach((h, idx) => {
-        rowObj[h] = row[idx];
-      });
+      for (let i = 1; i < data.length; i++) {
+        const row = data[i];
+        if (!row || !row.length) continue;
 
-      // Filtro de baja
-      const estadoBaja = String(rowObj["Activo_baja"] || rowObj["Ativo_baja"] || rowObj["Estado"] || "").trim().toUpperCase();
-      if (["SI", "TRUE", "1", "BAJA", "INACTIVO"].includes(estadoBaja)) {
-        continue;
+        const rowObj = {};
+        headers.forEach((h, idx) => {
+          rowObj[h] = row[idx];
+        });
+
+        // Filtro de baja
+        const estadoBaja = String(rowObj["Activo_baja"] || rowObj["Ativo_baja"] || rowObj["Estado"] || "").trim().toUpperCase();
+        if (["SI", "TRUE", "1", "BAJA", "INACTIVO"].includes(estadoBaja)) {
+          continue;
+        }
+
+        let nombre = [
+          rowObj["Subtipo"] || rowObj["Tipo"] || rowObj["Clase"] || "",
+          rowObj["Marca"] || "",
+          rowObj["Modelo"] || rowObj["Descripcion"] || rowObj["Detalle"] || ""
+        ].filter(Boolean).join(" ").trim();
+
+        let codInt = String(rowObj["Codigo_interno"] || rowObj["Numero_interno"] || "").trim();
+        let numSerie = String(rowObj["Numero_serie"] || rowObj["Patente"] || "").trim();
+
+        // Ignorar filas totalmente vacías
+        if (!nombre && !codInt && !numSerie) continue;
+
+        let id = String(rowObj["ID_indumentaria"] || rowObj["ID_instrumental"] || rowObj["ID_accesorio"] || 
+                        rowObj["ID_adicional"] || rowObj["id_repuesto"] || rowObj["ID_movilidad"] || 
+                        rowObj["ID_informatica"] || rowObj["ID_herramienta"] || rowObj["ID_material"] || ("item_" + tabName + "_" + i));
+
+        const isDron = catLimpia.toLowerCase().indexOf("instrumental") !== -1 && (nombre || "").toLowerCase().indexOf("dron") !== -1;
+        let modoCosteo = String(rowObj["Modo_costeo"] || rowObj["modo_costeo"] || "").trim();
+        if (!modoCosteo) {
+          if (catLimpia === "Movilidad") modoCosteo = "KM";
+          else if (catLimpia === "Instrumental") modoCosteo = isDron ? "Ciclos de batería" : "Días de uso";
+          else if (catLimpia === "Adicional") modoCosteo = "Días de uso";
+          else if (catLimpia === "Accesorios") modoCosteo = "";
+          else modoCosteo = "Cantidad";
+        }
+
+        inventario.push({
+          id: id,
+          categoria: catLimpia,
+          codigo_interno: codInt,
+          nombre: nombre || "Elemento sin nombre",
+          numero_serie: numSerie,
+          imagen: String(rowObj["Imagen"] || "").trim(),
+          stock_minimo: Number(rowObj["Stock_minimo"] || rowObj["Cantidad_minima"] || 0),
+          stock_actual: Number(rowObj["Stock_actual"] || rowObj["stock_actual"] || rowObj["Stock"] || rowObj["cantidad"] || 1),
+          url_carpeta: String(rowObj["URL_carpeta"] || "").trim(),
+          modo_costeo: modoCosteo,
+          en_mantenimiento: Boolean(rowObj["En_mantenimiento"] || rowObj["en_mantenimiento"] || false),
+          tipo_mantenimiento: String(rowObj["Tipo_mantenimiento"] || rowObj["tipo_mantenimiento"] || "").trim(),
+          fecha_inicio_mantenimiento: String(rowObj["Fecha_inicio_mantenimiento"] || rowObj["fecha_inicio_mantenimiento"] || "").trim(),
+          fecha_fin_mantenimiento: String(rowObj["Fecha_fin_mantenimiento"] || rowObj["fecha_fin_mantenimiento"] || "").trim(),
+          es_dron: isDron
+        });
       }
-
-      let id = String(rowObj["ID_indumentaria"] || rowObj["ID_instrumental"] || rowObj["ID_accesorio"] || 
-                      rowObj["ID_adicional"] || rowObj["id_repuesto"] || rowObj["ID_movilidad"] || 
-                      rowObj["ID_informatica"] || rowObj["ID_herramienta"] || rowObj["ID_material"] || ("item_" + tabName + "_" + i));
-
-      let nombre = [
-        rowObj["Subtipo"] || rowObj["Tipo"] || rowObj["Clase"] || "",
-        rowObj["Marca"] || "",
-        rowObj["Modelo"] || rowObj["Descripcion"] || rowObj["Detalle"] || ""
-      ].filter(Boolean).join(" ");
-
-      const isDron = catLimpia.toLowerCase().indexOf("instrumental") !== -1 && (nombre || "").toLowerCase().indexOf("dron") !== -1;
-      let modoCosteo = String(rowObj["Modo_costeo"] || rowObj["modo_costeo"] || "").trim();
-      if (!modoCosteo) {
-        if (catLimpia === "Movilidad") modoCosteo = "KM";
-        else if (catLimpia === "Instrumental") modoCosteo = isDron ? "Ciclos de batería" : "Días de uso";
-        else if (catLimpia === "Adicional") modoCosteo = "Días de uso";
-        else if (catLimpia === "Accesorios") modoCosteo = "";
-        else modoCosteo = "Cantidad";
-      }
-
-      inventario.push({
-        id: id,
-        categoria: catLimpia,
-        codigo_interno: String(rowObj["Codigo_interno"] || rowObj["Numero_interno"] || "").trim(),
-        nombre: nombre || "Elemento sin nombre",
-        numero_serie: String(rowObj["Numero_serie"] || rowObj["Patente"] || "").trim(),
-        imagen: String(rowObj["Imagen"] || "").trim(),
-        stock_minimo: Number(rowObj["Stock_minimo"] || rowObj["Cantidad_minima"] || 0),
-        stock_actual: Number(rowObj["Stock_actual"] || rowObj["stock_actual"] || rowObj["Stock"] || rowObj["cantidad"] || 1),
-        url_carpeta: String(rowObj["URL_carpeta"] || "").trim(),
-        modo_costeo: modoCosteo,
-        en_mantenimiento: Boolean(rowObj["En_mantenimiento"] || rowObj["en_mantenimiento"] || false),
-        tipo_mantenimiento: String(rowObj["Tipo_mantenimiento"] || rowObj["tipo_mantenimiento"] || "").trim(),
-        fecha_inicio_mantenimiento: String(rowObj["Fecha_inicio_mantenimiento"] || rowObj["fecha_inicio_mantenimiento"] || "").trim(),
-        fecha_fin_mantenimiento: String(rowObj["Fecha_fin_mantenimiento"] || rowObj["fecha_fin_mantenimiento"] || "").trim(),
-        es_dron: isDron,
-        raw: rowObj
-      });
+    } catch(errTab) {
+      Logger.log("Aviso: No se pudo leer pestaña " + tabName + ": " + errTab);
     }
   });
 
-  // 2. Leer proyectos y usuarios directamente de la hoja activa (Inventario v1.5 - Dev)
-  let sheetProy = findSheetCaseInsensitive(ss, ["proyectos_activos", "0_proyectos", "proyectos"]);
-  let sheetUsu = findSheetCaseInsensitive(ss, ["usuarios", "0_usuarios", "personal"]);
-
-  // Fallback secundario si estuvieran en otro libro (BBDD_asist_roster)
-  if (!sheetProy || !sheetUsu) {
-    let ssRoster = null;
-    if (ID_HOJA_ROSTER && ID_HOJA_ROSTER.trim()) {
-      try { ssRoster = SpreadsheetApp.openById(ID_HOJA_ROSTER.trim()); } catch(e) {}
-    }
-    if (!ssRoster) {
-      try {
-        const files = DriveApp.getFilesByName("BBDD_asist_roster");
-        if (files.hasNext()) ssRoster = SpreadsheetApp.open(files.next());
-      } catch(e) {}
-    }
-    if (ssRoster) {
-      if (!sheetProy) sheetProy = findSheetCaseInsensitive(ssRoster, ["proyectos_activos", "0_proyectos", "proyectos"]);
-      if (!sheetUsu) sheetUsu = findSheetCaseInsensitive(ssRoster, ["usuarios", "0_usuarios", "personal"]);
-    }
-  }
-
-  const proyectos = [];
-  if (sheetProy) {
-    const dataP = sheetProy.getDataRange().getValues();
-    if (dataP.length > 1) {
-      const headersP = dataP[0].map(h => String(h).trim().toLowerCase());
-      let idxId = headersP.indexOf("id_proyecto");
-      if (idxId === -1) idxId = headersP.indexOf("id");
-      if (idxId === -1) idxId = 0;
-
-      let idxDenom = headersP.indexOf("denominacion");
-      if (idxDenom === -1) idxDenom = headersP.indexOf("nombre");
-      if (idxDenom === -1) idxDenom = headersP.indexOf("proyecto");
-      if (idxDenom === -1) idxDenom = 1;
-
-      let idxArea = headersP.indexOf("area");
-      if (idxArea === -1) idxArea = 2;
-
-      for (let i = 1; i < dataP.length; i++) {
-        const idP = String(dataP[i][idxId] || "").trim();
-        const denom = String(dataP[i][idxDenom] || "").trim();
-        const area = String(dataP[i][idxArea] || "").trim();
-        if (idP || denom) {
-          proyectos.push({ id_proyecto: idP || denom, denominacion: denom || idP, area: area });
-        }
-      }
-    }
-  }
-
-  const usuarios = [];
-  if (sheetUsu) {
-    const dataU = sheetUsu.getDataRange().getValues();
-    if (dataU.length > 1) {
-      const headersU = dataU[0].map(h => String(h).trim().toLowerCase());
-      let idxId = headersU.indexOf("id_usuario");
-      if (idxId === -1) idxId = headersU.indexOf("id");
-      if (idxId === -1) idxId = 0;
-
-      let idxNom = headersU.indexOf("nombre");
-      if (idxNom === -1) idxNom = headersU.indexOf("nombre_apellido");
-      if (idxNom === -1) idxNom = headersU.indexOf("empleado");
-      if (idxNom === -1) idxNom = 1;
-
-      let idxMail = headersU.indexOf("email");
-      if (idxMail === -1) idxMail = headersU.indexOf("mail");
-      if (idxMail === -1) idxMail = 2;
-
-      let idxArea = headersU.indexOf("area");
-      if (idxArea === -1) idxArea = 3;
-
-      let idxDni = headersU.indexOf("dni");
-      if (idxDni === -1) idxDni = 4;
-
-      for (let i = 1; i < dataU.length; i++) {
-        const idU = String(dataU[i][idxId] || "").trim();
-        const nom = String(dataU[i][idxNom] || "").trim();
-        const mail = String(dataU[i][idxMail] || "").trim();
-        const area = String(dataU[i][idxArea] || "").trim();
-        const dni = String(dataU[i][idxDni] || "").trim();
-        if (idU || nom) {
-          usuarios.push({ id_usuario: idU || nom, nombre: nom || idU, email: mail, area: area, dni: dni });
-        }
-      }
-    }
-  }
+  // 2. Leer proyectos y usuarios directamente
+  const pyu = getProyectosYUsuarios();
 
   return {
-    proyectos: proyectos,
-    usuarios: usuarios,
+    proyectos: pyu.proyectos,
+    usuarios: pyu.usuarios,
     inventario: inventario,
     categorias: Object.keys(categoriasSet).sort(),
+    total_proyectos: pyu.proyectos.length,
+    total_usuarios: pyu.usuarios.length,
+    total_inventario: inventario.length,
     origen: "google_apps_script_cloud",
     timestamp: new Date().toISOString()
   };
 }
 
 function getOrCreateSheet(sheetName, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveOrOpenSpreadsheet();
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
     sheet = ss.insertSheet(sheetName);
@@ -412,6 +451,7 @@ function getOrCreateSheet(sheetName, headers) {
   }
   return sheet;
 }
+
 
 function calcularUnidadMedidaGas(tipo, elemento, modoCosteo) {
   if (modoCosteo) {
@@ -465,13 +505,25 @@ function uploadSignatureToDrive(base64Data, prefix) {
 
 function registrarSalida(data) {
   const idViaje = data.id_viaje || Utilities.getUuid();
-  const proyectos = data.proyectos || [];
+  let proyectos = data.proyectos || [];
+  if ((!proyectos || proyectos.length === 0) && data.proyectos_ids && data.proyectos_ids.length > 0) {
+    const todosProy = getProyectosYUsuarios().proyectos;
+    const proyMap = {};
+    todosProy.forEach(p => {
+      proyMap[String(p.id_proyecto)] = p.denominacion || p.nombre || p.id_proyecto;
+    });
+    proyectos = data.proyectos_ids.map(pId => ({
+      id_proyecto: String(pId),
+      denominacion: proyMap[String(pId)] || ("Proyecto #" + pId)
+    }));
+  }
   const items = data.items || [];
   const userS = data.user_s || "";
   const fechaS = data.fecha_s || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
   const nowIso = new Date().toISOString();
 
-  const firmaUrl = uploadSignatureToDrive(data.firma_s, "salida_" + idViaje.substring(0, 8));
+  const firmaBase64 = data.firma_s_base64 || data.firma_s || "";
+  const firmaUrl = uploadSignatureToDrive(firmaBase64, "salida_" + idViaje.substring(0, 8));
 
   const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
   const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim().toLowerCase());
@@ -673,7 +725,8 @@ function registrarRetorno(data) {
   const fechaR = data.fecha_r || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
   const nowIso = new Date().toISOString();
 
-  const firmaUrl = uploadSignatureToDrive(data.firma_r, "retorno_" + (idViaje ? idViaje.substring(0, 8) : "ret"));
+  const firmaBase64 = data.firma_r_base64 || data.firma_r || "";
+  const firmaUrl = uploadSignatureToDrive(firmaBase64, "retorno_" + (idViaje ? idViaje.substring(0, 8) : "ret"));
 
   const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
   const allData = sheet.getDataRange().getValues();
@@ -1016,7 +1069,7 @@ function registrarMovimiento(data) {
 }
 
 function crearElemento(data) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = getActiveOrOpenSpreadsheet();
   const categoria = data.categoria || "Materiales";
   let tabName = "6_0_Materiales";
   if (categoria === "Indumentaria") tabName = "1_0_Indumentaria";

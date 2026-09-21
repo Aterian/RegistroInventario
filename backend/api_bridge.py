@@ -29,7 +29,7 @@ from backend.database import (
 from backend.pdf_service import generate_remito_pdf
 
 logger = logging.getLogger("ingeap.api_bridge")
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 
 
 class ApiBridge:

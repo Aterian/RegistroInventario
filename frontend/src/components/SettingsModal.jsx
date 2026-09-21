@@ -72,7 +72,7 @@ export const SettingsModal = ({ isOpen, onClose, onSaved }) => {
         if (res && res.estado === 'ONLINE') {
           setTestResult({
             success: true,
-            message: `¡Conexión Cloud 24/7 exitosa! Libro: ${res.nombre_libro || 'Conectado'} (Modo autónomo sin PC).`
+            message: `¡Conexión Cloud 24/7 exitosa! Libro: ${res.nombre_libro || 'Conectado'} | Proyectos: ${res.total_proyectos ?? '0'} | Empleados: ${res.total_usuarios ?? '0'}.`
           });
         } else {
           setTestResult({

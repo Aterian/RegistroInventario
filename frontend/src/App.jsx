@@ -18,7 +18,18 @@ import { api } from './api';
 export function App() {
   const [currentTab, setCurrentTab] = useState('inicio');
   const [serverStatus, setServerStatus] = useState(null);
-  const [catalogos, setCatalogos] = useState({ proyectos: [], usuarios: [], inventario: [], categorias: [] });
+  const [catalogos, setCatalogos] = useState(() => {
+    try {
+      const cached = localStorage.getItem('ingeap_cached_catalog');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && (parsed.proyectos?.length || parsed.usuarios?.length || parsed.inventario?.length)) {
+          return parsed;
+        }
+      }
+    } catch(e) {}
+    return { proyectos: [], usuarios: [], inventario: [], categorias: [] };
+  });
   const [viajesActivos, setViajesActivos] = useState([]);
   const [alertasCount, setAlertasCount] = useState(0);
   
@@ -43,34 +54,53 @@ export function App() {
   const loadData = useCallback(async (forceRecargar = false) => {
     try {
       setIsRefreshing(true);
-      // Cargar en paralelo catálogos, estado, viajes y alertas
-      const [estadoRes, catRes, viajesRes, alertasRes] = await Promise.allSettled([
-        api.getEstado(),
-        api.getCatalogos(forceRecargar),
-        api.getViajesActivos(),
-        api.getAlertas(),
-      ]);
 
-      if (estadoRes.status === 'fulfilled') {
-        setServerStatus(estadoRes.value);
-      } else {
+      // 1. Cargar estado de conexión
+      try {
+        const estado = await api.getEstado();
+        setServerStatus(estado);
+      } catch (e) {
+        console.warn('Aviso al consultar estado:', e);
         setServerStatus(null);
       }
 
-      if (catRes.status === 'fulfilled') {
-        setCatalogos(catRes.value);
+      // 2. Cargar catálogos completos (proyectos, usuarios, inventario)
+      try {
+        const cat = await api.getCatalogos(forceRecargar);
+        if (cat && (cat.proyectos || cat.usuarios || cat.inventario)) {
+          setCatalogos(cat);
+        }
+      } catch (e) {
+        console.error('Error al cargar catálogos:', e);
+        // Si falló el catálogo completo pero estamos en móvil, intentar traer al menos proyectos y usuarios
+        try {
+          const pyu = await api.getProyectosYUsuarios();
+          if (pyu.proyectos?.length || pyu.usuarios?.length) {
+            setCatalogos(prev => ({
+              ...prev,
+              proyectos: pyu.proyectos || prev.proyectos,
+              usuarios: pyu.usuarios || prev.usuarios
+            }));
+          }
+        } catch (ePyu) {
+          console.warn('Fallback getProyectosYUsuarios falló:', ePyu);
+        }
       }
 
-      if (viajesRes.status === 'fulfilled') {
-        setViajesActivos(viajesRes.value);
-      }
-
-      if (alertasRes.status === 'fulfilled') {
-        const res = alertasRes.value?.resumen;
-        if (res) {
-          const totalAlertas = (res.vencidos || 0) + (res.por_vencer || 0) + (res.stock_bajo || 0);
+      // 3. Cargar viajes activos y alertas
+      try {
+        const [viajes, alertasRes] = await Promise.all([
+          api.getViajesActivos().catch(() => []),
+          api.getAlertas().catch(() => ({ alertas: [] }))
+        ]);
+        if (viajes) setViajesActivos(viajes);
+        const resAlertas = alertasRes?.resumen;
+        if (resAlertas) {
+          const totalAlertas = (resAlertas.vencidos || 0) + (resAlertas.por_vencer || 0) + (resAlertas.stock_bajo || 0);
           setAlertasCount(totalAlertas);
         }
+      } catch (e) {
+        console.warn('Aviso al cargar viajes/alertas:', e);
       }
     } catch (err) {
       console.error('Error general cargando datos:', err);

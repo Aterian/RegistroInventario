@@ -82,15 +82,18 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.crear_release == true)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.3.0' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.3.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.3.1' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.3.1' }}
           body: |
-            ### 📱 Ingeap Inventario para Celular (Android) - v1.3.0
+            ### 📱 Ingeap Inventario para Celular (Android) - ${{ github.ref_name }}
             
             - **Novedades de esta versión:**
+              - 👥 **Carga Definitiva de Proyectos y Empleados:** Lectura optimizada e instantánea de las tablas `proyectos_activos` y `usuarios` de la planilla maestra en Google Cloud.
+              - 🚀 **Conexión Cloud Inteligente y Resiliente (GET/POST):** Manejo adaptativo de peticiones con reintento automático para máxima compatibilidad con redes móviles y WebViews de Android.
+              - 🛡️ **Prevención de Colisiones en Apps Script:** Carga escalonada secuencial que elimina los bloqueos y timeouts de Google Apps Script.
+              - 📊 **Diagnóstico en Tiempo Real:** El botón "Probar Conexión" en Ajustes muestra la cantidad exacta de proyectos y empleados detectados en la nube.
               - 🎨 **Ícono Oficial de Ingeap:** Ícono nativo adaptativo en alta resolución para el launcher del teléfono.
               - 📱 **Nuevo Menú Móvil Intuitivo:** Barra de navegación inferior ergonómica al alcance del pulgar (Inicio, Viajes, botón central destacado de Salida, Catálogo y menú Más).
-              - 👥 **Listado de Proyectos y Usuarios:** Lectura directa y rápida desde las hojas `usuarios` y `proyectos_activos` de la planilla maestra.
               - 📷 **Corrección de Permisos de Cámara:** Acceso nativo habilitado en AndroidManifest para escaneo QR de herramientas e instrumental.
               - ✏️ **Edición de Salidas Registradas:** Permite corregir o agregar ítems en viajes activos sin perder firmas ni fechas de salida.
             

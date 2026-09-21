@@ -97,38 +97,59 @@ export const setApiBaseUrl = (url) => {
 
 // ----------------------------------------------------------------------
 // GESTOR DE LLAMADAS A GOOGLE APPS SCRIPT (Cloud 24/7)
-// ----------------------------------------------------------------------
-async function callGas(action, payload = {}, method = 'POST') {
+async function callGas(action, payload = {}, method = null) {
   const gasUrl = getGasUrl();
   if (!gasUrl) {
     throw new Error('No se configuró la URL de Google Apps Script. Ingrésela en Ajustes (⚙️).');
   }
 
-  let finalUrl = gasUrl;
-  let options = {};
+  // Por defecto: Todas las lecturas 'get...' van por GET para máxima compatibilidad móvil.
+  // Las escrituras ('registrar...', 'crear...', 'editar...', etc.) van por POST.
+  const primaryMethod = method || (action.startsWith('get') ? 'GET' : 'POST');
+  const secondaryMethod = primaryMethod === 'GET' ? 'POST' : 'GET';
 
-  if (method === 'GET') {
-    const query = new URLSearchParams({ action, ...payload }).toString();
-    finalUrl = gasUrl.includes('?') ? `${gasUrl}&${query}` : `${gasUrl}?${query}`;
-    options = {
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    };
-  } else {
-    options = {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8', // Evita preflight CORS restrictivo en Apps Script
-      },
-      body: JSON.stringify({ action, ...payload })
-    };
-  }
+  const doRequest = async (useMethod) => {
+    let finalUrl = gasUrl;
+    let options = {};
 
-  const res = await fetch(finalUrl, options);
-  if (!res.ok) {
-    throw new Error(`Error en Google Apps Script (HTTP ${res.status}): ${res.statusText}`);
+    if (useMethod === 'GET') {
+      const query = new URLSearchParams({ action, ...payload }).toString();
+      finalUrl = gasUrl.includes('?') ? `${gasUrl}&${query}` : `${gasUrl}?${query}`;
+      options = {
+        method: 'GET'
+      };
+    } else {
+      options = {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/plain;charset=utf-8', // Evita preflight CORS restrictivo
+        },
+        body: JSON.stringify({ action, ...payload })
+      };
+    }
+
+    const res = await fetch(finalUrl, options);
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+    const data = await res.json();
+    if (data && data.error) {
+      throw new Error(`Google Apps Script: ${data.error}`);
+    }
+    return data;
+  };
+
+  try {
+    return await doRequest(primaryMethod);
+  } catch (primaryErr) {
+    console.warn(`[callGas] ${primaryMethod} falló para "${action}" (${primaryErr.message}). Reintentando con ${secondaryMethod}...`);
+    try {
+      return await doRequest(secondaryMethod);
+    } catch (secErr) {
+      console.error(`[callGas] Fallaron ambos métodos (${primaryMethod} y ${secondaryMethod}) para "${action}":`, secErr);
+      throw primaryErr;
+    }
   }
-  return await res.json();
 }
 
 // ----------------------------------------------------------------------
@@ -218,20 +239,40 @@ export const api = {
 
     // Móvil / Web
     if (getGasUrl()) {
+      if (recargar) {
+        localStorage.removeItem('ingeap_cached_catalog');
+      }
       try {
-        const data = await callGas('getCatalogos', { recargar }, 'GET');
-        if (data && data.inventario) {
-          localStorage.setItem('ingeap_cached_catalog', JSON.stringify(data));
+        const data = await callGas('getCatalogos', { recargar });
+        if (data) {
+          // Si por alguna razón vino sin proyectos o sin usuarios, recuperarlos con getProyectosYUsuarios
+          if (!data.proyectos?.length || !data.usuarios?.length) {
+            try {
+              const pyu = await callGas('getProyectosYUsuarios', {});
+              if (pyu.proyectos?.length) data.proyectos = pyu.proyectos;
+              if (pyu.usuarios?.length) data.usuarios = pyu.usuarios;
+            } catch (ePyu) {
+              console.warn('Fallback getProyectosYUsuarios:', ePyu);
+            }
+          }
+          if (data.inventario?.length || data.proyectos?.length) {
+            localStorage.setItem('ingeap_cached_catalog', JSON.stringify(data));
+          }
         }
         return data;
       } catch (err) {
-        // Fallback a caché local si estamos sin conexión en terreno
+        console.error('Error cargando catálogos desde Google Apps Script:', err);
+        // Fallback a caché local SOLO si contiene datos válidos
         const cached = localStorage.getItem('ingeap_cached_catalog');
         if (cached) {
-          const parsed = JSON.parse(cached);
-          parsed.origen = 'offline_local_cache';
-          parsed.offline = true;
-          return parsed;
+          try {
+            const parsed = JSON.parse(cached);
+            if (parsed && (parsed.proyectos?.length || parsed.usuarios?.length || parsed.inventario?.length)) {
+              parsed.origen = 'offline_local_cache';
+              parsed.offline = true;
+              return parsed;
+            }
+          } catch(e) {}
         }
         throw err;
       }
@@ -241,7 +282,7 @@ export const api = {
     try {
       const res = await fetch(`${getApiBaseUrl()}/catalogos?recargar=${recargar}`);
       const data = await handleFetchResponse(res);
-      if (data && data.inventario) {
+      if (data && (data.inventario || data.proyectos?.length)) {
         localStorage.setItem('ingeap_cached_catalog', JSON.stringify(data));
       }
       return data;
@@ -250,6 +291,18 @@ export const api = {
       if (cached) return JSON.parse(cached);
       throw err;
     }
+  },
+
+  getProyectosYUsuarios: async () => {
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_catalogos) {
+      const c = await bridge.get_catalogos();
+      return { proyectos: c.proyectos || [], usuarios: c.usuarios || [] };
+    }
+    if (getGasUrl()) {
+      return await callGas('getProyectosYUsuarios', {});
+    }
+    return { proyectos: [], usuarios: [] };
   },
 
   // CRUD Catálogo
