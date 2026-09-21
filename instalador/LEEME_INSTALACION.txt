@@ -1,0 +1,22 @@
+============================================================
+   INGEAP S.A. - SISTEMA DE GESTION DE INVENTARIO Y VIAJES
+============================================================
+
+Instrucciones de Instalacion para Windows:
+
+OPCION A (Recomendada):
+Haga doble clic en "Instalar.bat" (o ejecute "Instalador_Ingeap_Inventario.exe").
+
+El instalador realizara automaticamente:
+1. Copia el ejecutable "IngeapInventario.exe" a %LOCALAPPDATA%\Ingeap\Inventario\
+2. Crea el acceso directo oficial en su Escritorio.
+3. Agrega la aplicacion a su Menu de Inicio de Windows.
+4. Configura el inicio automatico con Windows.
+5. Inicia el sistema inmediatamente.
+
+OPCION B (Manual / Portable):
+Puede ejecutar directamente "IngeapInventario.exe" sin necesidad de instalacion previa.
+
+Para Desinstalar:
+Ejecute "Desinstalar.bat" para remover accesos directos y el inicio automatico de forma limpia.
+============================================================

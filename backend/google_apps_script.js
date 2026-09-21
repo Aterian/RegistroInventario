@@ -36,7 +36,7 @@ const ID_CARPETA_FIRMAS = "";
 const REGISTRO_GASTOS_COLUMNS = [
   "id_gasto", "id_viaje", "id_proyecto", "proyecto", "tipo", "elemento",
   "fecha_s", "fecha_r", "unidad_s", "unidad_r", "costo_u", "costo_t",
-  "user_s", "firma_s", "user_r", "firma_r", "fecha_hora"
+  "user_s", "firma_s", "user_r", "firma_r", "fecha_hora_s", "fecha_hora_r", "unidad_medida"
 ];
 
 const SOLICITUDES_COLUMNS = [
@@ -120,6 +120,18 @@ function handleRequest(e, method) {
         result = registrarRetorno(postData);
         break;
 
+      case "marcarMantenimiento":
+        result = marcarMantenimiento(postData);
+        break;
+
+      case "finalizarMantenimiento":
+        result = finalizarMantenimiento(postData);
+        break;
+
+      case "actualizarStock":
+        result = actualizarStock(postData);
+        break;
+
       case "getAlertas":
         result = getAlertas();
         break;
@@ -158,7 +170,6 @@ function handleRequest(e, method) {
 
       default:
         result = { error: "Acción no reconocida: " + action };
-        break;
     }
 
     return ContentService.createTextOutput(JSON.stringify(result))
@@ -231,6 +242,16 @@ function getCatalogos() {
         rowObj["Modelo"] || rowObj["Descripcion"] || rowObj["Detalle"] || ""
       ].filter(Boolean).join(" ");
 
+      const isDron = catLimpia.toLowerCase().indexOf("instrumental") !== -1 && (nombre || "").toLowerCase().indexOf("dron") !== -1;
+      let modoCosteo = String(rowObj["Modo_costeo"] || rowObj["modo_costeo"] || "").trim();
+      if (!modoCosteo) {
+        if (catLimpia === "Movilidad") modoCosteo = "KM";
+        else if (catLimpia === "Instrumental") modoCosteo = isDron ? "Ciclos de batería" : "Días de uso";
+        else if (catLimpia === "Adicional") modoCosteo = "Días de uso";
+        else if (catLimpia === "Accesorios") modoCosteo = "";
+        else modoCosteo = "Cantidad";
+      }
+
       inventario.push({
         id: id,
         categoria: catLimpia,
@@ -239,10 +260,17 @@ function getCatalogos() {
         numero_serie: String(rowObj["Numero_serie"] || rowObj["Patente"] || "").trim(),
         imagen: String(rowObj["Imagen"] || "").trim(),
         stock_minimo: Number(rowObj["Stock_minimo"] || rowObj["Cantidad_minima"] || 0),
-        stock_actual: Number(rowObj["cantidad"] || 1),
+        stock_actual: Number(rowObj["Stock_actual"] || rowObj["stock_actual"] || rowObj["Stock"] || rowObj["cantidad"] || 1),
         url_carpeta: String(rowObj["URL_carpeta"] || "").trim(),
+        modo_costeo: modoCosteo,
+        en_mantenimiento: Boolean(rowObj["En_mantenimiento"] || rowObj["en_mantenimiento"] || false),
+        tipo_mantenimiento: String(rowObj["Tipo_mantenimiento"] || rowObj["tipo_mantenimiento"] || "").trim(),
+        fecha_inicio_mantenimiento: String(rowObj["Fecha_inicio_mantenimiento"] || rowObj["fecha_inicio_mantenimiento"] || "").trim(),
+        fecha_fin_mantenimiento: String(rowObj["Fecha_fin_mantenimiento"] || rowObj["fecha_fin_mantenimiento"] || "").trim(),
+        es_dron: isDron,
         raw: rowObj
       });
+
     }
   });
 
@@ -304,8 +332,39 @@ function getOrCreateSheet(sheetName, headers) {
     if (headers && headers.length) {
       sheet.appendRow(headers);
     }
+  } else if (headers && headers.length && sheet.getLastColumn() > 0) {
+    try {
+      const existingHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(h => String(h).trim().toLowerCase());
+      headers.forEach(col => {
+        if (existingHeaders.indexOf(col.toLowerCase()) === -1 && col) {
+          sheet.getRange(1, sheet.getLastColumn() + 1).setValue(col);
+          existingHeaders.push(col.toLowerCase());
+        }
+      });
+    } catch (eH) {}
   }
   return sheet;
+}
+
+function calcularUnidadMedidaGas(tipo, elemento, modoCosteo) {
+  if (modoCosteo) {
+    const mc = String(modoCosteo).trim().toLowerCase();
+    if (mc.indexOf("km") !== -1) return "km";
+    if (mc.indexOf("dia") !== -1 || mc.indexOf("día") !== -1) return "días de uso";
+    if (mc.indexOf("ciclo") !== -1) return "ciclos de batería";
+    if (mc.indexOf("cant") !== -1) return "cantidad";
+    if (mc.indexOf("ning") !== -1 || mc.indexOf("sin") !== -1) return "";
+    return modoCosteo;
+  }
+  const t = String(tipo || "").toLowerCase();
+  const e = String(elemento || "").toLowerCase();
+  if (t.indexOf("movilidad") !== -1) return "km";
+  if (t.indexOf("dron") !== -1 || e.indexOf("dron") !== -1) return "ciclos de batería";
+  if (t.indexOf("instrumental") !== -1) return "días de uso";
+  if (t.indexOf("adicional") !== -1) return "días de uso";
+  if (t.indexOf("accesorio") !== -1) return "";
+  if (t.indexOf("material") !== -1 || t.indexOf("herramienta") !== -1 || t.indexOf("indumentaria") !== -1 || t.indexOf("repuesto") !== -1) return "cantidad";
+  return "cantidad";
 }
 
 function uploadSignatureToDrive(base64Data, prefix) {
@@ -348,6 +407,7 @@ function registrarSalida(data) {
   const firmaUrl = uploadSignatureToDrive(data.firma_s, "salida_" + idViaje.substring(0, 8));
 
   const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
+  const headers = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 1)).getValues()[0].map(h => String(h).trim().toLowerCase());
   const rowsToAdd = [];
 
   items.forEach(it => {
@@ -358,28 +418,35 @@ function registrarSalida(data) {
     }
     const unidadS = Number(it.unidad_s || 0);
     const costoU = Number(it.costo_u || 0);
+    const uMedida = it.unidad_medida || calcularUnidadMedidaGas(tipo, elem, it.modo_costeo || "");
 
     proyectos.forEach(proj => {
       const idGasto = Utilities.getUuid();
-      rowsToAdd.push([
-        idGasto,
-        idViaje,
-        String(proj.id_proyecto || ""),
-        String(proj.denominacion || ""),
-        tipo,
-        elem,
-        fechaS,
-        "",          // fecha_r
-        unidadS,
-        0,           // unidad_r
-        costoU,
-        0,           // costo_t
-        userS,
-        firmaUrl,
-        "",          // user_r
-        "",          // firma_r
-        nowIso
-      ]);
+      const rowDict = {
+        "id_gasto": idGasto,
+        "id_viaje": idViaje,
+        "id_proyecto": String(proj.id_proyecto || ""),
+        "proyecto": String(proj.denominacion || ""),
+        "tipo": tipo,
+        "elemento": elem,
+        "fecha_s": fechaS,
+        "fecha_r": "",
+        "unidad_s": unidadS,
+        "unidad_r": 0,
+        "costo_u": costoU,
+        "costo_t": 0,
+        "user_s": userS,
+        "firma_s": firmaUrl,
+        "user_r": "",
+        "firma_r": "",
+        "fecha_hora_s": nowIso,
+        "fecha_hora_r": "",
+        "unidad_medida": uMedida,
+        "fecha_hora": nowIso
+      };
+
+      const rowArr = headers.map(h => (rowDict[h] !== undefined ? rowDict[h] : ""));
+      rowsToAdd.push(rowArr);
     });
 
     // Registrar en movimientos
@@ -410,6 +477,7 @@ function registrarRetorno(data) {
   const prorrateos = data.prorrateos || [];
   const userR = data.user_r || "";
   const fechaR = data.fecha_r || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+  const nowIso = new Date().toISOString();
 
   const firmaUrl = uploadSignatureToDrive(data.firma_r, "retorno_" + (idViaje ? idViaje.substring(0, 8) : "ret"));
 
@@ -418,6 +486,23 @@ function registrarRetorno(data) {
   if (allData.length < 2) {
     return { success: false, error: "No hay registros de viajes cargados." };
   }
+
+  const headers = allData[0].map(h => String(h).trim().toLowerCase());
+  const colIndex = (colName) => headers.indexOf(colName.toLowerCase()) + 1;
+  const colFechaR = colIndex("fecha_r");
+  const colUnidadR = colIndex("unidad_r");
+  const colCostoT = colIndex("costo_t");
+  const colUserR = colIndex("user_r");
+  const colFirmaR = colIndex("firma_r");
+  const colFechaHoraR = colIndex("fecha_hora_r");
+  const colFechaHora = colIndex("fecha_hora");
+  const colIdViaje = colIndex("id_viaje") - 1;
+  const colIdGasto = colIndex("id_gasto") - 1;
+  const colElem = colIndex("elemento") - 1;
+  const colProjId = colIndex("id_proyecto") - 1;
+  const colUnidadS = colIndex("unidad_s") - 1;
+  const colCostoU = colIndex("costo_u") - 1;
+  const colTipo = colIndex("tipo") - 1;
 
   const prorrateoMap = {};
   prorrateos.forEach(p => {
@@ -428,34 +513,46 @@ function registrarRetorno(data) {
 
   for (let i = 1; i < allData.length; i++) {
     const row = allData[i];
-    if (String(row[1]) === String(idViaje)) {
-      const elemName = String(row[5]);
-      const projId = String(row[2]);
+    if (String(row[colIdViaje]) === String(idViaje)) {
+      const elemName = String(row[colElem]);
+      const projId = String(row[colProjId]);
 
       const itemCoincidente = itemsRetorno.find(it => {
         let itName = it.nombre || "";
         if (it.codigo_interno) itName = "[" + it.codigo_interno + "] " + itName;
-        return itName === elemName || String(it.id_gasto) === String(row[0]);
+        return itName === elemName || String(it.id_gasto) === String(row[colIdGasto]);
       });
 
       if (itemCoincidente) {
-        const uSalida = Number(row[8] || 0);
+        const uSalida = Number(row[colUnidadS] || 0);
         const uRetorno = Number(itemCoincidente.unidad_r !== undefined ? itemCoincidente.unidad_r : uSalida);
-        const costoU = Number(row[10] || 0);
+        const costoU = Number(row[colCostoU] || 0);
         const pct = prorrateoMap[projId] || (1.0 / (prorrateos.length || 1));
-        const costoT = (uSalida - uRetorno) * costoU * pct;
+        const tipo = String(row[colTipo] || "").toLowerCase();
+        const modoC = String(itemCoincidente.modo_costeo || "").toLowerCase();
 
-        // Columnas 1-indexed en Sheets:
-        // H: fecha_r (col 8)
-        // J: unidad_r (col 10)
-        // L: costo_t (col 12)
-        // O: user_r (col 15)
-        // P: firma_r (col 16)
-        sheet.getRange(i + 1, 8).setValue(fechaR);
-        sheet.getRange(i + 1, 10).setValue(uRetorno);
-        sheet.getRange(i + 1, 12).setValue(costoT);
-        sheet.getRange(i + 1, 15).setValue(userR);
-        sheet.getRange(i + 1, 16).setValue(firmaUrl);
+        let costoT = 0;
+        if (modoC.indexOf("km") !== -1 || (tipo.indexOf("movilidad") !== -1 && !modoC)) {
+          const delta = Math.max(0, uRetorno - uSalida);
+          costoT = delta * costoU * pct;
+        } else if (modoC.indexOf("dia") !== -1 || modoC.indexOf("día") !== -1 || (tipo.indexOf("instrumental") !== -1 && !modoC) || (tipo.indexOf("adicional") !== -1 && !modoC)) {
+          costoT = uRetorno * costoU * pct;
+        } else if (modoC.indexOf("ciclo") !== -1 || (tipo.indexOf("dron") !== -1 && !modoC)) {
+          costoT = Math.max(0, uRetorno - uSalida) * costoU * pct;
+        } else if (modoC.indexOf("ning") !== -1 || modoC.indexOf("sin") !== -1) {
+          costoT = 0;
+        } else {
+          const consumo = Math.max(0, uSalida - uRetorno);
+          costoT = consumo * costoU * pct;
+        }
+
+        if (colFechaR > 0) sheet.getRange(i + 1, colFechaR).setValue(fechaR);
+        if (colUnidadR > 0) sheet.getRange(i + 1, colUnidadR).setValue(uRetorno);
+        if (colCostoT > 0) sheet.getRange(i + 1, colCostoT).setValue(costoT);
+        if (colUserR > 0) sheet.getRange(i + 1, colUserR).setValue(userR);
+        if (colFirmaR > 0) sheet.getRange(i + 1, colFirmaR).setValue(firmaUrl);
+        if (colFechaHoraR > 0) sheet.getRange(i + 1, colFechaHoraR).setValue(nowIso);
+        if (colFechaHora > 0) sheet.getRange(i + 1, colFechaHora).setValue(nowIso);
         filasActualizadas++;
       }
     }
@@ -463,6 +560,7 @@ function registrarRetorno(data) {
 
   return { success: true, id_viaje: idViaje, filas_actualizadas: filasActualizadas };
 }
+
 
 function getViajesActivos() {
   const sheet = getOrCreateSheet("registro_gastos", REGISTRO_GASTOS_COLUMNS);
@@ -767,3 +865,61 @@ function editarElemento(data) {
 function eliminarElemento(data) {
   return { success: true, id_elemento: data.id_elemento };
 }
+
+function marcarMantenimiento(data) {
+  const idElemento = data.id_elemento;
+  const tipoMant = data.tipo_mantenimiento || "Preventivo";
+  const fechaInicio = data.fecha_inicio || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+  const observaciones = data.observaciones || "";
+
+  registrarMovimiento({
+    tipo_movimiento: "Ingreso a Mantenimiento",
+    id_elemento: idElemento,
+    categoria: data.categoria || "",
+    elemento: data.nombre || ("Elemento #" + idElemento),
+    codigo_interno: data.codigo_interno || "",
+    cantidad: 1,
+    usuario: "Oficina / Mantenimiento",
+    observaciones: "Mantenimiento (" + tipoMant + "): " + observaciones
+  });
+
+  return { success: true, id_elemento: idElemento, en_mantenimiento: true, tipo_mantenimiento: tipoMant };
+}
+
+function finalizarMantenimiento(data) {
+  const idElemento = data.id_elemento;
+  const fechaFin = Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+
+  registrarMovimiento({
+    tipo_movimiento: "Retorno de Mantenimiento",
+    id_elemento: idElemento,
+    categoria: data.categoria || "",
+    elemento: data.nombre || ("Elemento #" + idElemento),
+    codigo_interno: data.codigo_interno || "",
+    cantidad: 1,
+    usuario: "Oficina / Mantenimiento",
+    observaciones: "Reingreso al inventario operativo disponible"
+  });
+
+  return { success: true, id_elemento: idElemento, en_mantenimiento: false, fecha_fin: fechaFin };
+}
+
+function actualizarStock(data) {
+  const idElemento = data.id_elemento;
+  const categoria = data.categoria || "Materiales";
+  const nuevoStock = Number(data.nuevo_stock !== undefined ? data.nuevo_stock : (data.stock_actual || 0));
+
+  registrarMovimiento({
+    tipo_movimiento: "Ajuste de Stock",
+    id_elemento: idElemento,
+    categoria: categoria,
+    elemento: data.nombre || ("Elemento #" + idElemento),
+    codigo_interno: data.codigo_interno || "",
+    cantidad: nuevoStock,
+    usuario: "Oficina / Inventario",
+    observaciones: data.observaciones || ("Ajuste directo de stock a " + nuevoStock)
+  });
+
+  return { success: true, id_elemento: idElemento, stock_actual: nuevoStock };
+}
+

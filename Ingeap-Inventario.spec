@@ -8,6 +8,7 @@ base_dir = SPECPATH
 added_files = [
     (os.path.join(base_dir, "frontend", "dist"), "frontend/dist"),
     (os.path.join(base_dir, "backend", "config.json"), "backend"),
+    (os.path.join(base_dir, "backend", "assets"), "backend/assets"),
 ]
 
 # Agregar credentials.json si existe en backend
@@ -80,4 +81,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=os.path.join(base_dir, 'backend', 'assets', 'icon.ico'),
 )

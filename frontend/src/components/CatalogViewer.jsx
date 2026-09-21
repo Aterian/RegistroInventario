@@ -16,8 +16,13 @@ import {
   Shirt, 
   Shield, 
   Package, 
-  Key 
+  Key,
+  QrCode,
+  AlertTriangle,
+  CheckCircle,
+  X
 } from 'lucide-react';
+import { QRLabelModal } from './QRLabelModal';
 import { api } from '../api';
 
 export const CatalogViewer = ({ 
@@ -28,8 +33,23 @@ export const CatalogViewer = ({
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('TODOS');
+  
+  // Stock mínimo
   const [editingStockId, setEditingStockId] = useState(null);
   const [tempStockMinimo, setTempStockMinimo] = useState('');
+
+  // Stock actual directo
+  const [editingStockActualId, setEditingStockActualId] = useState(null);
+  const [tempStockActual, setTempStockActual] = useState('');
+
+  // Modal QR Label
+  const [selectedItemForQR, setSelectedItemForQR] = useState(null);
+
+  // Modal Mantenimiento
+  const [maintenanceItem, setMaintenanceItem] = useState(null);
+  const [maintenanceTipo, setMaintenanceTipo] = useState('Preventivo');
+  const [maintenanceObs, setMaintenanceObs] = useState('');
+  const [isSubmittingMaint, setIsSubmittingMaint] = useState(false);
 
   const inventario = catalogos.inventario || [];
   const categorias = catalogos.categorias || [];
@@ -78,6 +98,50 @@ export const CatalogViewer = ({
       if (onReloadCatalog) onReloadCatalog();
     } catch (err) {
       alert('Error guardando stock mínimo: ' + err.message);
+    }
+  };
+
+  const handleSaveStockActual = async (item) => {
+    try {
+      const nuevo = parseFloat(tempStockActual) || 0;
+      await api.actualizarStock(item.categoria, item.id, nuevo, 'Ajuste manual desde catálogo');
+      setEditingStockActualId(null);
+      if (onReloadCatalog) onReloadCatalog();
+    } catch (err) {
+      alert('Error actualizando stock actual: ' + err.message);
+    }
+  };
+
+  const handleMarcarMantenimiento = async (e) => {
+    e.preventDefault();
+    if (!maintenanceItem) return;
+    setIsSubmittingMaint(true);
+    try {
+      await api.marcarMantenimiento({
+        categoria: maintenanceItem.categoria,
+        id: maintenanceItem.id,
+        tipo_mantenimiento: maintenanceTipo,
+        observaciones: maintenanceObs
+      });
+      setMaintenanceItem(null);
+      if (onReloadCatalog) onReloadCatalog();
+    } catch (err) {
+      alert('Error al registrar mantenimiento: ' + err.message);
+    } finally {
+      setIsSubmittingMaint(false);
+    }
+  };
+
+  const handleFinalizarMantenimiento = async (item) => {
+    if (!window.confirm(`¿Confirmar que "${item.nombre}" volvió a inventario y finalizó su mantenimiento?`)) return;
+    try {
+      await api.finalizarMantenimiento({
+        categoria: item.categoria,
+        id: item.id
+      });
+      if (onReloadCatalog) onReloadCatalog();
+    } catch (err) {
+      alert('Error finalizando mantenimiento: ' + err.message);
     }
   };
 
@@ -173,6 +237,7 @@ export const CatalogViewer = ({
               <div key={item.id} className="card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '0.75rem' }}>
                 <div>
                   {/* Category & Badges */}
+                  {/* Category & Badges */}
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.4rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                       {getCategoryIcon(item.categoria)}
@@ -181,7 +246,20 @@ export const CatalogViewer = ({
                       </span>
                     </div>
 
-                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', alignItems: 'center' }}>
+                      {item.codigo_interno && (
+                        <span style={{
+                          background: 'rgba(204, 51, 51, 0.15)',
+                          color: 'var(--primary-red)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace',
+                          fontWeight: 800,
+                          fontSize: '0.8rem'
+                        }}>
+                          [{item.codigo_interno}]
+                        </span>
+                      )}
                       {isLicencia && (
                         <span style={{
                           background: 'rgba(6, 182, 212, 0.15)',
@@ -207,18 +285,72 @@ export const CatalogViewer = ({
                     </h4>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', fontSize: '0.78rem', color: 'var(--text-dim)' }}>
-                      {item.codigo_interno && (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
-                          <Tag size={13} /> Código: <strong style={{ color: 'var(--text-main)' }}>{item.codigo_interno}</strong>
-                        </div>
-                      )}
                       {item.numero_serie && (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
                           <Hash size={13} /> Serie / Patente: <strong style={{ color: 'var(--text-main)' }}>{item.numero_serie}</strong>
                         </div>
                       )}
+                      {item.modo_costeo && (
+                        <div style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)' }}>
+                          Modo de costeo: <strong style={{ textTransform: 'capitalize' }}>{item.modo_costeo}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
+
+                  {/* Bloque de Mantenimiento / Calibración */}
+                  {item.en_mantenimiento ? (
+                    <div style={{ 
+                      marginTop: '0.5rem', 
+                      padding: '0.5rem 0.65rem', 
+                      borderRadius: '6px', 
+                      background: 'rgba(245, 158, 11, 0.12)', 
+                      border: '1px solid rgba(245, 158, 11, 0.35)', 
+                      display: 'flex', 
+                      alignItems: 'center', 
+                      justifyContent: 'space-between', 
+                      flexWrap: 'wrap',
+                      gap: '0.4rem' 
+                    }}>
+                      <div>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                          <AlertTriangle size={13} /> EN MANTENIMIENTO ({item.tipo_mantenimiento || 'Revisión'})
+                        </span>
+                        {item.fecha_inicio_mantenimiento && (
+                          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '0.1rem' }}>
+                            Desde: {item.fecha_inicio_mantenimiento}
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleFinalizarMantenimiento(item)}
+                        className="btn btn-sm btn-primary"
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem', whiteSpace: 'nowrap' }}
+                        title="Registrar fecha y hora de fin y devolver a Disponible"
+                      >
+                        Volvió a inventario
+                      </button>
+                    </div>
+                  ) : (
+                    (item.categoria === 'Instrumental' || item.categoria === 'Movilidad' || item.categoria === 'Herramientas') && (
+                      <div style={{ marginTop: '0.4rem', display: 'flex', justifyContent: 'flex-start' }}>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMaintenanceItem(item);
+                            setMaintenanceTipo('Preventivo');
+                            setMaintenanceObs('');
+                          }}
+                          className="btn btn-sm btn-outline"
+                          style={{ fontSize: '0.72rem', padding: '0.15rem 0.45rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}
+                          title="Registrar que el equipo entra a mantenimiento o calibración"
+                        >
+                          <Wrench size={11} /> Registrar Mantenimiento
+                        </button>
+                      </div>
+                    )
+                  )}
 
                   {/* Repuestos: Compatibilidad */}
                   {isRepuesto && item.elementos_compatibles_ids && item.elementos_compatibles_ids.length > 0 && (
@@ -259,8 +391,52 @@ export const CatalogViewer = ({
                     </div>
                   )}
 
-                  {/* Stock Mínimo y Actual */}
-                  <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem' }}>
+                  {/* Stock Actual Directo (Materiales, Indumentaria, Herramientas, Repuestos) */}
+                  {(item.categoria === 'Materiales' || item.categoria === 'Indumentaria' || item.categoria === 'Herramientas' || item.categoria === 'Repuestos') && (
+                    <div style={{ marginTop: '0.6rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem', padding: '0.35rem 0.5rem', background: 'var(--bg-card-hover)', borderRadius: '6px' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Stock Actual: <strong style={{ color: 'var(--text-main)', fontSize: '0.85rem' }}>{item.stock_actual ?? item.stock ?? 0}</strong>
+                      </span>
+                      {editingStockActualId === item.id ? (
+                        <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                          <input 
+                            type="number" 
+                            step="any"
+                            style={{ width: '60px', padding: '0.15rem 0.3rem', fontSize: '0.75rem' }} 
+                            className="form-input" 
+                            value={tempStockActual} 
+                            onChange={(e) => setTempStockActual(e.target.value)} 
+                          />
+                          <button 
+                            onClick={() => handleSaveStockActual(item)} 
+                            className="btn btn-sm btn-primary" 
+                            style={{ padding: '0.15rem 0.35rem', fontSize: '0.7rem' }}
+                          >
+                            OK
+                          </button>
+                          <button 
+                            onClick={() => setEditingStockActualId(null)} 
+                            className="btn btn-sm btn-secondary" 
+                            style={{ padding: '0.15rem 0.35rem', fontSize: '0.7rem' }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      ) : (
+                        <button 
+                          onClick={() => { setEditingStockActualId(item.id); setTempStockActual(item.stock_actual ?? item.stock ?? 0); }}
+                          className="btn btn-sm btn-outline" 
+                          style={{ padding: '0.15rem 0.4rem', fontSize: '0.7rem' }}
+                          title="Modificar stock físico disponible"
+                        >
+                          Ajustar Stock
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Stock Mínimo */}
+                  <div style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.78rem' }}>
                     <span style={{ color: 'var(--text-muted)' }}>
                       Stock Mínimo: <strong style={{ color: 'var(--text-main)' }}>{item.stock_minimo || 0}</strong>
                     </span>
@@ -300,7 +476,7 @@ export const CatalogViewer = ({
                   </div>
                 </div>
 
-                {/* Card Actions: Editar / Baja */}
+                {/* Card Actions: QR / Editar / Baja */}
                 <div style={{
                   display: 'flex',
                   justifyContent: 'flex-end',
@@ -308,7 +484,17 @@ export const CatalogViewer = ({
                   borderTop: '1px solid var(--border-subtle)',
                   paddingTop: '0.65rem'
                 }}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedItemForQR(item)}
+                    className="btn btn-sm btn-outline"
+                    style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}
+                    title="Generar código QR e imprimir etiqueta PDF"
+                  >
+                    <QrCode size={13} /> Etiqueta QR
+                  </button>
                   <button 
+                    type="button"
                     onClick={() => onOpenEditItem(item)} 
                     className="btn btn-sm btn-outline"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}
@@ -316,6 +502,7 @@ export const CatalogViewer = ({
                     <Edit3 size={13} /> Editar
                   </button>
                   <button 
+                    type="button"
                     onClick={() => handleEliminar(item)} 
                     className="btn btn-sm btn-danger"
                     style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.78rem' }}
@@ -328,6 +515,72 @@ export const CatalogViewer = ({
             );
           })}
         </div>
+      )}
+
+      {/* Modal para Marcar en Mantenimiento */}
+      {maintenanceItem && (
+        <div className="modal-overlay" onClick={() => setMaintenanceItem(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '480px', padding: '1.75rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.15rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                  <Wrench size={18} color="var(--accent-amber)" /> Enviar a Mantenimiento / Calibración
+                </h3>
+                <p style={{ margin: '0.2rem 0 0 0', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                  {maintenanceItem.nombre} {maintenanceItem.codigo_interno && `[${maintenanceItem.codigo_interno}]`}
+                </p>
+              </div>
+              <button onClick={() => setMaintenanceItem(null)} className="btn btn-sm btn-outline">
+                <X size={15} />
+              </button>
+            </div>
+
+            <form onSubmit={handleMarcarMantenimiento} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="form-group">
+                <label className="form-label">Tipo de Mantenimiento *</label>
+                <select 
+                  className="form-select"
+                  value={maintenanceTipo}
+                  onChange={(e) => setMaintenanceTipo(e.target.value)}
+                  required
+                >
+                  <option value="Preventivo">Mantenimiento Preventivo</option>
+                  <option value="Correctivo">Mantenimiento Correctivo / Reparación</option>
+                  <option value="Calibración">Calibración y Certificación Oficial</option>
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Observaciones / Taller / Proveedor</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="Ej: Taller Topcon oficial, cambio de conector y calibración de prismas..."
+                  value={maintenanceObs}
+                  onChange={(e) => setMaintenanceObs(e.target.value)}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.5rem', marginTop: '0.5rem' }}>
+                <button type="button" onClick={() => setMaintenanceItem(null)} className="btn btn-secondary">
+                  Cancelar
+                </button>
+                <button type="submit" disabled={isSubmittingMaint} className="btn btn-primary">
+                  {isSubmittingMaint ? 'Registrando...' : 'Confirmar Mantenimiento'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Etiqueta QR y PDF */}
+      {selectedItemForQR && (
+        <QRLabelModal
+          isOpen={Boolean(selectedItemForQR)}
+          onClose={() => setSelectedItemForQR(null)}
+          item={selectedItemForQR}
+        />
       )}
     </div>
   );

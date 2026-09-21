@@ -14,9 +14,18 @@ export const CatalogEditorModal = ({
 
   const isEditing = Boolean(itemToEdit);
 
+  const getDefaultModo = (cat) => {
+    const c = (cat || '').toLowerCase();
+    if (c.includes('movilidad')) return 'km';
+    if (c.includes('instrumental') || c.includes('adicional')) return 'dias de uso';
+    if (c.includes('material') || c.includes('repuesto') || c.includes('indumentaria') || c.includes('herramienta')) return 'cantidad';
+    return '';
+  };
+
   const [categoria, setCategoria] = useState(itemToEdit?.categoria || 'Materiales');
   const [nombre, setNombre] = useState(itemToEdit?.nombre || '');
   const [codigoInterno, setCodigoInterno] = useState(itemToEdit?.codigo_interno || '');
+  const [modoCosteo, setModoCosteo] = useState(itemToEdit?.modo_costeo || getDefaultModo(itemToEdit?.categoria || 'Materiales'));
   const [marca, setMarca] = useState(itemToEdit?.marca || '');
   const [modelo, setModelo] = useState(itemToEdit?.modelo || '');
   const [numeroSerie, setNumeroSerie] = useState(itemToEdit?.numero_serie || '');
@@ -68,6 +77,7 @@ export const CatalogEditorModal = ({
         categoria,
         nombre: nombre.trim(),
         codigo_interno: codigoInterno.trim(),
+        modo_costeo: modoCosteo,
         marca: marca.trim(),
         modelo: modelo.trim(),
         numero_serie: numeroSerie.trim(),
@@ -93,6 +103,19 @@ export const CatalogEditorModal = ({
       setError(err.message || 'Error guardando en el catálogo');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const getCodigoHint = (cat) => {
+    switch (cat) {
+      case 'Movilidad': return 'Formato sugerido: 999, 1000, 1001 (o MOV-01)';
+      case 'Instrumental': return 'Formato sugerido: 3001, 3101, 3201, 3301...';
+      case 'Adicionales': return 'Formato sugerido: 2000, 2001 (bastones, trípodes)';
+      case 'Accesorios': return 'Formato sugerido: 3201-1, ACC-01';
+      case 'Herramientas': return 'Formato sugerido: H1, H2, H3...';
+      case 'Repuestos': return 'Formato sugerido: R01, R02...';
+      case 'Materiales': return 'Formato sugerido: M01, M02...';
+      default: return 'Código alfanumérico interno';
     }
   };
 
@@ -132,14 +155,18 @@ export const CatalogEditorModal = ({
         )}
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          {/* Categoría y Subcategoría */}
+          {/* Categoría y Subcategoría / Código */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
             <div className="form-group">
               <label className="form-label">Categoría *</label>
               <select 
                 className="form-select" 
                 value={categoria} 
-                onChange={(e) => setCategoria(e.target.value)}
+                onChange={(e) => {
+                  const newCat = e.target.value;
+                  setCategoria(newCat);
+                  if (!isEditing) setModoCosteo(getDefaultModo(newCat));
+                }}
                 disabled={isEditing}
               >
                 {categorias.map(cat => (
@@ -169,10 +196,13 @@ export const CatalogEditorModal = ({
                 <input 
                   type="text" 
                   className="form-input" 
-                  placeholder="Ej: MOV-04, INS-21..." 
+                  placeholder="Ej: 3001, 1001, H1..." 
                   value={codigoInterno} 
                   onChange={(e) => setCodigoInterno(e.target.value)} 
                 />
+                <small style={{ fontSize: '0.72rem', color: 'var(--corporate-gray)', marginTop: '0.2rem', display: 'block' }}>
+                  {getCodigoHint(categoria)}
+                </small>
               </div>
             )}
           </div>
@@ -188,6 +218,37 @@ export const CatalogEditorModal = ({
               onChange={(e) => setNombre(e.target.value)} 
               required 
             />
+          </div>
+
+          {/* Modo de Costeo y Stock Mínimo */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+            <div className="form-group">
+              <label className="form-label">Modo de Costeo en Viajes</label>
+              <select 
+                className="form-select" 
+                value={modoCosteo} 
+                onChange={(e) => setModoCosteo(e.target.value)}
+              >
+                <option value="">Sin costeo / Fijo</option>
+                <option value="km">Kilómetros recorridos (km) - Movilidad</option>
+                <option value="dias de uso">Días de uso (días) - Instrumental y Adicionales</option>
+                <option value="ciclos de bateria">Ciclos de batería - Drones</option>
+                <option value="cantidad">Cantidad consumida - Materiales / Repuestos</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Stock Mínimo Deseado</label>
+              <input 
+                type="number" 
+                step="any"
+                min="0"
+                className="form-input" 
+                placeholder="Ej: 5 (Alerta si stock <= mínimo)" 
+                value={stockMinimo} 
+                onChange={(e) => setStockMinimo(e.target.value)} 
+              />
+            </div>
           </div>
 
           {/* Marca y Modelo */}
@@ -215,31 +276,17 @@ export const CatalogEditorModal = ({
           </div>
 
           {/* Número de Serie o Patente */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-            <div className="form-group">
-              <label className="form-label">
-                {categoria === 'Movilidad' ? 'Patente' : 'Número de Serie'}
-              </label>
-              <input 
-                type="text" 
-                className="form-input" 
-                placeholder={categoria === 'Movilidad' ? 'Ej: AF 123 CD' : 'N° de serie de fábrica'} 
-                value={categoria === 'Movilidad' ? patente : numeroSerie} 
-                onChange={(e) => categoria === 'Movilidad' ? setPatente(e.target.value) : setNumeroSerie(e.target.value)} 
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Stock Mínimo Deseado</label>
-              <input 
-                type="number" 
-                step="any"
-                min="0"
-                className="form-input" 
-                placeholder="Ej: 5 (Alerta si stock <= mínimo)" 
-                value={stockMinimo} 
-                onChange={(e) => setStockMinimo(e.target.value)} 
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label">
+              {categoria === 'Movilidad' ? 'Patente' : 'Número de Serie'}
+            </label>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder={categoria === 'Movilidad' ? 'Ej: AF 123 CD' : 'N° de serie de fábrica'} 
+              value={categoria === 'Movilidad' ? patente : numeroSerie} 
+              onChange={(e) => categoria === 'Movilidad' ? setPatente(e.target.value) : setNumeroSerie(e.target.value)} 
+            />
           </div>
 
           {/* Si es categoría REPUESTOS: Selector múltiple de elementos compatibles */}

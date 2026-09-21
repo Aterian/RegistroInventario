@@ -15,6 +15,8 @@ from backend.models import (
     ElementoCreateRequest,
     ElementoUpdateRequest,
     StockMinimoRequest,
+    StockUpdateRequest,
+    MantenimientoRequest,
     SolicitudCreateRequest,
     SolicitudUpdateRequest,
     MovimientoCreateRequest
@@ -105,6 +107,36 @@ def eliminar_elemento_catalogo(categoria: str, id_elemento: str):
     except Exception as e:
         logger.error(f"Error dando de baja elemento {id_elemento}: {e}")
         raise HTTPException(status_code=500, detail=f"Error al dar de baja elemento: {str(e)}")
+
+@router.post("/catalogos/mantenimiento/{id_elemento}")
+def marcar_mantenimiento(id_elemento: str, payload: MantenimientoRequest):
+    """Marca un elemento en mantenimiento."""
+    try:
+        res = google_service.marcar_mantenimiento(id_elemento, payload.tipo_mantenimiento, payload.fecha_inicio, payload.observaciones or "")
+        return {"success": True, "resultado": res}
+    except Exception as e:
+        logger.error(f"Error marcando mantenimiento para {id_elemento}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error marcando mantenimiento: {str(e)}")
+
+@router.post("/catalogos/mantenimiento-fin/{id_elemento}")
+def finalizar_mantenimiento(id_elemento: str):
+    """Finaliza el mantenimiento y retorna el elemento a disponible."""
+    try:
+        res = google_service.finalizar_mantenimiento(id_elemento)
+        return {"success": True, "resultado": res}
+    except Exception as e:
+        logger.error(f"Error finalizando mantenimiento para {id_elemento}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error finalizando mantenimiento: {str(e)}")
+
+@router.post("/catalogos/stock/{categoria}/{id_elemento}")
+def actualizar_stock_directo(categoria: str, id_elemento: str, payload: StockUpdateRequest):
+    """Actualiza directamente el stock actual de un elemento."""
+    try:
+        res = google_service.actualizar_stock_elemento(categoria, id_elemento, payload.stock_actual, payload.observaciones or "")
+        return {"success": True, "resultado": res}
+    except Exception as e:
+        logger.error(f"Error actualizando stock para {id_elemento}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error actualizando stock: {str(e)}")
 
 # ----------------------------------------------------------------------
 # TABLERO DE CONTROL Y ALERTAS

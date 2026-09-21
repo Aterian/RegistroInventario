@@ -56,10 +56,21 @@ def init_db() -> None:
                 user_r TEXT,
                 firma_r TEXT,
                 fecha_hora TEXT,
+                fecha_hora_s TEXT,
+                fecha_hora_r TEXT,
+                unidad_medida TEXT,
                 synced_sheets INTEGER DEFAULT 0,
                 FOREIGN KEY (id_viaje) REFERENCES viajes(id_viaje)
             )
         """)
+
+        # Migraciones seguras para gastos_detalle
+        for col_name in ["fecha_hora_s", "fecha_hora_r", "unidad_medida"]:
+            try:
+                cursor.execute(f"ALTER TABLE gastos_detalle ADD COLUMN {col_name} TEXT")
+            except Exception:
+                pass
+
 
         # Caché local de catálogo de inventario unificado
         cursor.execute("""
@@ -207,12 +218,15 @@ def save_viaje_salida_local(
         ))
 
         for fila in filas_gastos:
+            f_h_s = fila.get("fecha_hora_s") or fila.get("fecha_hora") or now_iso
+            f_h_r = fila.get("fecha_hora_r") or ""
+            u_m = fila.get("unidad_medida") or ""
             cursor.execute("""
                 INSERT OR REPLACE INTO gastos_detalle (
                     id_gasto, id_viaje, id_proyecto, proyecto, tipo, elemento,
                     fecha_s, fecha_r, unidad_s, unidad_r, costo_u, costo_t,
-                    user_s, firma_s, user_r, firma_r, fecha_hora, synced_sheets
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+                    user_s, firma_s, user_r, firma_r, fecha_hora, fecha_hora_s, fecha_hora_r, unidad_medida, synced_sheets
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
             """, (
                 fila.get("id_gasto"),
                 id_viaje,
@@ -230,7 +244,10 @@ def save_viaje_salida_local(
                 fila.get("firma_s") or "",
                 fila.get("user_r") or "",
                 fila.get("firma_r") or "",
-                fila.get("fecha_hora") or now_iso
+                f_h_s,
+                f_h_s,
+                f_h_r,
+                u_m
             ))
 
         conn.commit()
@@ -260,9 +277,10 @@ def save_viaje_retorno_local(
         """, (fecha_r, user_r, firma_r, now_iso, id_viaje))
 
         for fila in filas_actualizadas:
+            f_h_r = fila.get("fecha_hora_r") or now_iso
             cursor.execute("""
                 UPDATE gastos_detalle 
-                SET fecha_r = ?, unidad_r = ?, costo_t = ?, user_r = ?, firma_r = ?, fecha_hora = ?
+                SET fecha_r = ?, unidad_r = ?, costo_t = ?, user_r = ?, firma_r = ?, fecha_hora_r = ?, fecha_hora = ?
                 WHERE id_gasto = ?
             """, (
                 fecha_r,
@@ -270,6 +288,7 @@ def save_viaje_retorno_local(
                 float(fila.get("costo_t", 0.0) or 0.0),
                 user_r,
                 firma_r,
+                f_h_r,
                 now_iso,
                 fila.get("id_gasto")
             ))
@@ -639,6 +658,67 @@ def delete_elemento_catalogo_local(id_elemento: str) -> None:
         conn.commit()
     finally:
         conn.close()
+
+def update_elemento_mantenimiento_local(
+    id_elemento: str,
+    en_mantenimiento: bool,
+    tipo_mantenimiento: str = "",
+    fecha_inicio: str = "",
+    fecha_fin: str = "",
+    observaciones: str = ""
+) -> Optional[Dict[str, Any]]:
+    """Actualiza los datos de mantenimiento de un elemento en catalogo_cache."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("SELECT raw_data_json FROM catalogo_cache WHERE id = ?", (str(id_elemento),))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        data = json.loads(row["raw_data_json"])
+        data["en_mantenimiento"] = bool(en_mantenimiento)
+        data["tipo_mantenimiento"] = tipo_mantenimiento
+        data["fecha_inicio_mantenimiento"] = fecha_inicio
+        data["fecha_fin_mantenimiento"] = fecha_fin
+        if observaciones:
+            data["observaciones_mantenimiento"] = observaciones
+        
+        cursor.execute("""
+            UPDATE catalogo_cache 
+            SET raw_data_json = ?, updated_at = ?
+            WHERE id = ?
+        """, (json.dumps(data, ensure_ascii=False), now_iso, str(id_elemento)))
+        conn.commit()
+        return data
+    finally:
+        conn.close()
+
+def update_elemento_stock_local(
+    id_elemento: str,
+    nuevo_stock: float
+) -> Optional[Dict[str, Any]]:
+    """Actualiza el stock actual de un elemento en catalogo_cache."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    now_iso = datetime.now().isoformat()
+    try:
+        cursor.execute("SELECT raw_data_json FROM catalogo_cache WHERE id = ?", (str(id_elemento),))
+        row = cursor.fetchone()
+        if not row:
+            return None
+        data = json.loads(row["raw_data_json"])
+        data["stock_actual"] = float(nuevo_stock)
+        cursor.execute("""
+            UPDATE catalogo_cache 
+            SET raw_data_json = ?, updated_at = ?
+            WHERE id = ?
+        """, (json.dumps(data, ensure_ascii=False), now_iso, str(id_elemento)))
+        conn.commit()
+        return data
+    finally:
+        conn.close()
+
 
 # ----------------------------------------------------------------------
 # SESION Y PERFILES DE USUARIO (Persistencia offline estilo ReporteDiario)

@@ -155,22 +155,40 @@ def generate_remito_pdf(viaje_data: Dict[str, Any]) -> str:
     estado_viaje = "RETORNADO" if viaje_data.get("fecha_r") else "EN CURSO / SALIDA"
     badge_bg = colors.HexColor("#10b981") if viaje_data.get("fecha_r") else colors.HexColor(COLOR_PRIMARY_RED)
 
-    header_table_data = [
-        [
-            Paragraph("<b>INGEAP S.A.</b><br/><font size=10 color='#64748b'>Gestión de Inventario y Viajes Multiproyecto</font>", title_style),
-            Paragraph(f"<b>ESTADO: {estado_viaje}</b><br/><font size=8>Remito: {id_viaje[:12]}...</font>", header_badge_style)
-        ]
-    ]
+    logo_path = Path(__file__).resolve().parent / "assets" / "logo_ingeap.png"
+    logo_flowable = None
+    if logo_path.exists():
+        try:
+            logo_flowable = RLImage(str(logo_path), width=1.4*inch, height=0.5*inch)
+        except Exception as e_img:
+            logger.warning(f"No se pudo cargar imagen de logo para PDF: {e_img}")
 
-    header_table = Table(header_table_data, colWidths=[350, 190])
+    if logo_flowable:
+        header_table_data = [
+            [
+                logo_flowable,
+                Paragraph("<b>INGEAP S.A.</b><br/><font size=9 color='#64748b'>Gestión de Inventario y Viajes</font>", title_style),
+                Paragraph(f"<b>ESTADO: {estado_viaje}</b><br/><font size=8>Remito: {id_viaje[:12]}...</font>", header_badge_style)
+            ]
+        ]
+        header_table = Table(header_table_data, colWidths=[110, 230, 200])
+    else:
+        header_table_data = [
+            [
+                Paragraph("<b>INGEAP S.A.</b><br/><font size=10 color='#64748b'>Gestión de Inventario y Viajes Multiproyecto</font>", title_style),
+                Paragraph(f"<b>ESTADO: {estado_viaje}</b><br/><font size=8>Remito: {id_viaje[:12]}...</font>", header_badge_style)
+            ]
+        ]
+        header_table = Table(header_table_data, colWidths=[340, 200])
+
     header_table.setStyle(TableStyle([
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("ALIGN", (1, 0), (1, 0), "RIGHT"),
-        ("BACKGROUND", (1, 0), (1, 0), badge_bg),
-        ("BOTTOMPADDING", (1, 0), (1, 0), 6),
-        ("TOPPADDING", (1, 0), (1, 0), 6),
-        ("LEFTPADDING", (1, 0), (1, 0), 8),
-        ("RIGHTPADDING", (1, 0), (1, 0), 8),
+        ("ALIGN", (-1, 0), (-1, 0), "RIGHT"),
+        ("BACKGROUND", (-1, 0), (-1, 0), badge_bg),
+        ("BOTTOMPADDING", (-1, 0), (-1, 0), 6),
+        ("TOPPADDING", (-1, 0), (-1, 0), 6),
+        ("LEFTPADDING", (-1, 0), (-1, 0), 8),
+        ("RIGHTPADDING", (-1, 0), (-1, 0), 8),
     ]))
     story.append(header_table)
     story.append(Spacer(1, 10))
@@ -226,13 +244,13 @@ def generate_remito_pdf(viaje_data: Dict[str, Any]) -> str:
     items = viaje_data.get("items", [])
     table_rows = [
         [
-            Paragraph("Tipo / Categoría", table_header_style),
+            Paragraph("Tipo", table_header_style),
             Paragraph("Elemento / Código", table_header_style),
             Paragraph("Proyecto", table_header_style),
+            Paragraph("U. Medida", table_header_style),
             Paragraph("Unid. S", table_header_style),
             Paragraph("Unid. R", table_header_style),
             Paragraph("Dif.", table_header_style),
-            Paragraph("Costo U.", table_header_style),
             Paragraph("Costo Tot.", table_header_style),
         ]
     ]
@@ -242,18 +260,18 @@ def generate_remito_pdf(viaje_data: Dict[str, Any]) -> str:
         u_s = float(it.get("unidad_s", 0) or 0)
         u_r = float(it.get("unidad_r", 0) or 0)
         diff = max(0.0, u_r - u_s) if viaje_data.get("fecha_r") else 0.0
-        c_u = float(it.get("costo_u", 0) or 0)
         c_t = float(it.get("costo_t", 0) or 0)
         total_liquidado += c_t
+        u_medida = str(it.get("unidad_medida") or "-")
 
         table_rows.append([
             Paragraph(str(it.get("tipo") or "-"), table_cell_style),
             Paragraph(str(it.get("elemento") or "-"), table_cell_style),
             Paragraph(str(it.get("proyecto") or "-"), table_cell_style),
+            Paragraph(u_medida, table_cell_center),
             Paragraph(f"{u_s:,.1f}", table_cell_center),
             Paragraph(f"{u_r:,.1f}" if viaje_data.get("fecha_r") else "-", table_cell_center),
             Paragraph(f"{diff:,.1f}" if viaje_data.get("fecha_r") else "-", table_cell_center),
-            Paragraph(f"${c_u:,.2f}", table_cell_num),
             Paragraph(f"${c_t:,.2f}" if viaje_data.get("fecha_r") else "-", table_cell_num)
         ])
 
@@ -270,7 +288,8 @@ def generate_remito_pdf(viaje_data: Dict[str, Any]) -> str:
             Paragraph(f"<b>${total_liquidado:,.2f}</b>", table_cell_num)
         ])
 
-    items_table = Table(table_rows, colWidths=[75, 145, 95, 45, 45, 40, 45, 50])
+    items_table = Table(table_rows, colWidths=[65, 140, 90, 60, 45, 45, 40, 55])
+
     items_table_style = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor(COLOR_DARK_NAVY)),
         ("ALIGN", (0, 0), (-1, 0), "CENTER"),

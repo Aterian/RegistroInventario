@@ -9,6 +9,8 @@ class ItemSalidaDTO(BaseModel):
     numero_serie: Optional[str] = ""
     unidad_s: float = Field(default=0.0, description="Unidad inicial (odómetro o cantidad)")
     costo_u: float = Field(default=0.0, description="Costo unitario de uso")
+    unidad_medida: Optional[str] = Field(default="", description="km, dias de uso, ciclos de bateria, cantidad")
+    modo_costeo: Optional[str] = Field(default="", description="Modo de costeo configurado")
 
 class SalidaRequest(BaseModel):
     proyectos_ids: List[str] = Field(min_length=1, description="Lista de IDs de proyectos asignados")
@@ -41,6 +43,13 @@ class CatalogoItemUnified(BaseModel):
     nombre: str
     numero_serie: Optional[str] = ""
     imagen: Optional[str] = ""
+    modo_costeo: Optional[str] = ""
+    en_mantenimiento: Optional[bool] = False
+    tipo_mantenimiento: Optional[str] = ""
+    fecha_inicio_mantenimiento: Optional[str] = ""
+    fecha_fin_mantenimiento: Optional[str] = ""
+    stock_actual: Optional[float] = 0.0
+    stock_minimo: Optional[float] = 0.0
 
 class CatalogoResponse(BaseModel):
     proyectos: List[Dict[str, Any]]
@@ -71,6 +80,11 @@ class ElementoCreateRequest(BaseModel):
     patente: Optional[str] = ""
     stock_minimo: Optional[float] = 0.0
     stock_actual: Optional[float] = 0.0
+    modo_costeo: Optional[str] = ""
+    en_mantenimiento: Optional[bool] = False
+    tipo_mantenimiento: Optional[str] = ""
+    fecha_inicio_mantenimiento: Optional[str] = ""
+    fecha_fin_mantenimiento: Optional[str] = ""
     elementos_compatibles_ids: Optional[List[str]] = []
     url_carpeta: Optional[str] = ""
     observaciones: Optional[str] = ""
@@ -86,6 +100,11 @@ class ElementoUpdateRequest(BaseModel):
     patente: Optional[str] = None
     stock_minimo: Optional[float] = None
     stock_actual: Optional[float] = None
+    modo_costeo: Optional[str] = None
+    en_mantenimiento: Optional[bool] = None
+    tipo_mantenimiento: Optional[str] = None
+    fecha_inicio_mantenimiento: Optional[str] = None
+    fecha_fin_mantenimiento: Optional[str] = None
     elementos_compatibles_ids: Optional[List[str]] = None
     url_carpeta: Optional[str] = None
     observaciones: Optional[str] = None
@@ -93,6 +112,15 @@ class ElementoUpdateRequest(BaseModel):
 class StockMinimoRequest(BaseModel):
     id_elemento: str
     stock_minimo: float
+
+class StockUpdateRequest(BaseModel):
+    stock_actual: float
+    observaciones: Optional[str] = ""
+
+class MantenimientoRequest(BaseModel):
+    tipo_mantenimiento: str
+    fecha_inicio: Optional[str] = ""
+    observaciones: Optional[str] = ""
 
 class SolicitudCreateRequest(BaseModel):
     elemento: str
@@ -119,4 +147,5 @@ class MovimientoCreateRequest(BaseModel):
     proyecto: Optional[str] = ""
     usuario: str
     observaciones: Optional[str] = ""
+
 

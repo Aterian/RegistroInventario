@@ -234,20 +234,31 @@ export const RetornoModal = ({
                       const key = it.id_gasto || it.elemento;
                       const u_s = parseFloat(it.unidad_s) || 0;
                       const u_r = parseFloat(unidadesRetorno[key]) || 0;
+                      const modo = (it.modo_costeo || '').toLowerCase();
                       const tipo = (it.tipo || '').toLowerCase();
-                      const isMov = tipo.includes('movilidad');
-                      const isIns = tipo.includes('instrumental') && !tipo.includes('dron');
-                      const isMat = tipo.includes('material');
+                      const isMov = modo === 'km' || tipo.includes('movilidad');
+                      const isDron = modo === 'ciclos de bateria' || tipo.includes('dron');
+                      const isAdicional = tipo.includes('adicional') || tipo.includes('accesorio');
+                      const isIns = modo === 'dias de uso' || isAdicional || (tipo.includes('instrumental') && !isDron);
+                      const isMat = modo === 'cantidad' || tipo.includes('material') || tipo.includes('consumible');
 
                       let consumoTexto = '';
+                      let costoLabel = '/u';
                       if (isMov) {
                         const delta = Math.max(0, u_r - u_s);
                         consumoTexto = `+${delta.toFixed(0)} km`;
+                        costoLabel = '/km';
                       } else if (isIns) {
                         consumoTexto = `${u_r} días`;
+                        costoLabel = '/día';
+                      } else if (isDron) {
+                        const delta = Math.max(0, u_r - u_s);
+                        consumoTexto = `+${delta.toFixed(0)} ciclos`;
+                        costoLabel = '/ciclo';
                       } else if (isMat) {
                         const consumo = Math.max(0, u_s - u_r);
                         consumoTexto = `${consumo} consumidos`;
+                        costoLabel = '/u';
                       } else {
                         consumoTexto = `${u_r} u.`;
                       }
@@ -257,11 +268,11 @@ export const RetornoModal = ({
                           <td style={{ padding: '0.5rem 0.75rem' }}>
                             <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{it.elemento}</div>
                             <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>
-                              {it.tipo} • Costo U: ${it.costo_u} {isMov ? '/km' : (isIns ? '/día' : '/u')}
+                              {it.tipo} • Costo U: ${it.costo_u} {costoLabel}
                             </span>
                           </td>
                           <td style={{ padding: '0.5rem 0.75rem', fontFamily: 'monospace' }}>
-                            {u_s} {isMov ? 'km' : (isIns ? '(Días al ret.)' : 'u')}
+                            {u_s} {isMov ? 'km' : (isIns ? '(Días al ret.)' : (isDron ? 'ciclos' : 'u'))}
                           </td>
                           <td style={{ padding: '0.4rem 0.75rem' }}>
                             <input
@@ -270,7 +281,7 @@ export const RetornoModal = ({
                               min={isMov ? u_s : 0}
                               className="form-input"
                               style={{ padding: '0.35rem 0.5rem', fontSize: '0.85rem' }}
-                              placeholder={isMov ? "Km final" : (isIns ? "Días de uso" : "Devueltos")}
+                              placeholder={isMov ? "Km final" : (isIns ? "Días de uso" : (isDron ? "Ciclos finales" : "Devueltos"))}
                               value={unidadesRetorno[key] ?? ''}
                               onChange={(e) => {
                                 const val = e.target.value;

@@ -15,7 +15,17 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 
-export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClearPrefilled }) => {
+const AREAS_OPERATIVAS = [
+  'Topografía',
+  'Geofísica',
+  'Drones / Gabinete',
+  'Taller / Depósito',
+  'Seguridad e Higiene',
+  'Administración / Finanzas',
+  'Dirección'
+];
+
+export const SolicitudesViewer = ({ proyectos = [], usuarios = [], prefilledItem = null, onClearPrefilled }) => {
   const [solicitudes, setSolicitudes] = useState([]);
   const [filtroEstado, setFiltroEstado] = useState('Pendiente');
   const [loading, setLoading] = useState(true);
@@ -26,6 +36,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
   const [categoria, setCategoria] = useState('Materiales');
   const [cantidad, setCantidad] = useState(1);
   const [solicitante, setSolicitante] = useState('');
+  const [customSolicitante, setCustomSolicitante] = useState('');
   const [prioridad, setPrioridad] = useState('Media');
   const [idProyecto, setIdProyecto] = useState('');
   const [observaciones, setObservaciones] = useState('');
@@ -62,7 +73,8 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
 
   const handleCrearSolicitud = async (e) => {
     e.preventDefault();
-    if (!elemento.trim() || !solicitante.trim()) return;
+    const finalSolicitante = solicitante === 'OTRO' ? customSolicitante.trim() : solicitante.trim();
+    if (!elemento.trim() || !finalSolicitante) return;
 
     setIsSubmitting(true);
     try {
@@ -71,7 +83,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
         elemento: elemento.trim(),
         categoria,
         cantidad: parseFloat(cantidad) || 1,
-        solicitante: solicitante.trim(),
+        solicitante: finalSolicitante,
         prioridad,
         id_proyecto: idProyecto,
         proyecto: selectedProj ? selectedProj.denominacion : '',
@@ -81,6 +93,7 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
       setElemento('');
       setCantidad(1);
       setSolicitante('');
+      setCustomSolicitante('');
       setObservaciones('');
       cargarSolicitudes();
     } catch (err) {
@@ -322,15 +335,40 @@ export const SolicitudesViewer = ({ proyectos = [], prefilledItem = null, onClea
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group" style={{ marginBottom: '0.25rem' }}>
-                  <label className="form-label">Solicitante (Empleado) *</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="Nombre de quien solicita"
+                  <label className="form-label">Solicitante (Empleado o Área) *</label>
+                  <select 
+                    className="form-select"
                     value={solicitante}
                     onChange={(e) => setSolicitante(e.target.value)}
                     required
-                  />
+                  >
+                    <option value="">-- Seleccione quién solicita --</option>
+                    <optgroup label="🏢 Áreas Operativas">
+                      {AREAS_OPERATIVAS.map(a => (
+                        <option key={a} value={`Área: ${a}`}>Área: {a}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="👷 Empleados de Ingeap">
+                      {usuarios.map(u => (
+                        <option key={u.id_usuario || u.nombre} value={u.nombre}>
+                          {u.nombre} {u.area ? `(${u.area})` : ''}
+                        </option>
+                      ))}
+                    </optgroup>
+                    <option value="OTRO">-- Otro solicitante (Escribir) --</option>
+                  </select>
+
+                  {solicitante === 'OTRO' && (
+                    <input 
+                      type="text" 
+                      className="form-input" 
+                      style={{ marginTop: '0.4rem' }}
+                      placeholder="Ingrese nombre o sector solicitante..."
+                      value={customSolicitante}
+                      onChange={(e) => setCustomSolicitante(e.target.value)}
+                      required
+                    />
+                  )}
                 </div>
 
                 <div className="form-group" style={{ marginBottom: '0.25rem' }}>

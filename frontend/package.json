@@ -9,18 +9,21 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/core": "^5.7.4",
+    "html5-qrcode": "^2.3.8",
+    "jspdf": "^4.2.1",
+    "lucide-react": "^0.359.0",
+    "qrcode": "^1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "lucide-react": "^0.359.0",
-    "react-signature-canvas": "^1.0.6",
-    "@capacitor/core": "^5.7.4"
+    "react-signature-canvas": "^1.0.6"
   },
   "devDependencies": {
+    "@capacitor/android": "^5.7.4",
+    "@capacitor/cli": "^5.7.4",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
     "@vitejs/plugin-react": "^4.2.1",
-    "vite": "^5.1.6",
-    "@capacitor/cli": "^5.7.4",
-    "@capacitor/android": "^5.7.4"
+    "vite": "^5.1.6"
   }
 }

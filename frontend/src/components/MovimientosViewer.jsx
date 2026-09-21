@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import { api } from '../api';
 
-export const MovimientosViewer = () => {
+export const MovimientosViewer = ({ inventario = [] }) => {
   const [movimientos, setMovimientos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -24,9 +24,11 @@ export const MovimientosViewer = () => {
 
   // Formulario de nuevo movimiento manual
   const [tipoMov, setTipoMov] = useState('Ingreso');
-  const [elementoNombre, setElementoNombre] = useState('');
-  const [cantidad, setCantidad] = useState(1);
   const [categoria, setCategoria] = useState('Materiales');
+  const [selectedItemId, setSelectedItemId] = useState('');
+  const [elementoNombre, setElementoNombre] = useState('');
+  const [equipoDestino, setEquipoDestino] = useState('');
+  const [cantidad, setCantidad] = useState(1);
   const [usuario, setUsuario] = useState('');
   const [observaciones, setObservaciones] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -53,16 +55,23 @@ export const MovimientosViewer = () => {
 
     setIsSubmitting(true);
     try {
+      let obsFinal = observaciones.trim();
+      if (categoria === 'Repuestos' && equipoDestino) {
+        obsFinal = obsFinal ? `${obsFinal} | Aplicado a: ${equipoDestino}` : `Aplicado a: ${equipoDestino}`;
+      }
+
       await api.registrarMovimiento({
         tipo_movimiento: tipoMov,
         elemento: elementoNombre.trim(),
         categoria,
         cantidad: parseFloat(cantidad) || 1,
         usuario: usuario.trim() || 'Oficina / Depósito',
-        observaciones: observaciones.trim(),
+        observaciones: obsFinal,
       });
       setIsModalOpen(false);
+      setSelectedItemId('');
       setElementoNombre('');
+      setEquipoDestino('');
       setCantidad(1);
       setObservaciones('');
       cargarMovimientos();
@@ -269,50 +278,114 @@ export const MovimientosViewer = () => {
             </div>
 
             <form onSubmit={handleCrearMovimiento} style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
-                <label className="form-label">Tipo de Movimiento *</label>
-                <select className="form-select" value={tipoMov} onChange={(e) => setTipoMov(e.target.value)}>
-                  <option value="Ingreso">📥 Ingreso (Compra / Reposición)</option>
-                  <option value="Ajuste">⚙️ Ajuste de Inventario</option>
-                  <option value="Baja">🗑️ Baja (Rotura / Obsolescencia)</option>
-                </select>
-              </div>
-
-              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
-                <label className="form-label">Elemento / Descripción *</label>
-                <input 
-                  type="text" 
-                  className="form-input" 
-                  placeholder="Ej: Estacas de madera 2x2, Pintura aerosol, Batería Topcon..."
-                  value={elementoNombre}
-                  onChange={(e) => setElementoNombre(e.target.value)}
-                  required
-                />
-              </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                 <div className="form-group" style={{ marginBottom: '0.25rem' }}>
-                  <label className="form-label">Categoría</label>
-                  <select className="form-select" value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+                  <label className="form-label">Tipo de Movimiento *</label>
+                  <select className="form-select" value={tipoMov} onChange={(e) => setTipoMov(e.target.value)}>
+                    <option value="Ingreso">📥 Ingreso (Compra / Reposición)</option>
+                    <option value="Ajuste">⚙️ Ajuste de Inventario</option>
+                    <option value="Baja">🗑️ Baja (Rotura / Obsolescencia)</option>
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
+                  <label className="form-label">Categoría *</label>
+                  <select 
+                    className="form-select" 
+                    value={categoria} 
+                    onChange={(e) => {
+                      setCategoria(e.target.value);
+                      setSelectedItemId('');
+                      setElementoNombre('');
+                    }}
+                  >
                     <option value="Materiales">Materiales</option>
                     <option value="Herramientas">Herramientas</option>
                     <option value="Repuestos">Repuestos</option>
                     <option value="Indumentaria">Indumentaria</option>
                     <option value="Instrumental">Instrumental</option>
+                    <option value="Movilidad">Movilidad</option>
                   </select>
                 </div>
+              </div>
 
-                <div className="form-group" style={{ marginBottom: '0.25rem' }}>
-                  <label className="form-label">Cantidad *</label>
+              {/* Selector de elemento del catálogo */}
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
+                <label className="form-label">Seleccionar Elemento del Catálogo *</label>
+                <select
+                  className="form-select"
+                  value={selectedItemId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedItemId(val);
+                    if (val && val !== 'OTRO') {
+                      const it = inventario.find(i => String(i.id) === String(val));
+                      if (it) {
+                        setElementoNombre(it.nombre);
+                      }
+                    } else if (val === 'OTRO') {
+                      setElementoNombre('');
+                    }
+                  }}
+                >
+                  <option value="">-- Seleccionar elemento del inventario --</option>
+                  {inventario
+                    .filter(i => (i.categoria || '').toLowerCase() === categoria.toLowerCase())
+                    .map(it => (
+                      <option key={it.id} value={it.id}>
+                        {it.codigo_interno ? `[${it.codigo_interno}] ` : ''}{it.nombre} {it.numero_serie ? `(S/N: ${it.numero_serie})` : ''}
+                      </option>
+                    ))}
+                  <option value="OTRO">-- Otro / Escribir manualmente --</option>
+                </select>
+
+                {/* Si elige OTRO o escribe descripción libre */}
+                {(selectedItemId === 'OTRO' || selectedItemId === '') && (
                   <input 
-                    type="number" 
-                    step="any" 
+                    type="text" 
                     className="form-input" 
-                    value={cantidad} 
-                    onChange={(e) => setCantidad(e.target.value)} 
-                    required 
+                    style={{ marginTop: '0.4rem' }}
+                    placeholder="Descripción del elemento o insumo..."
+                    value={elementoNombre}
+                    onChange={(e) => setElementoNombre(e.target.value)}
+                    required
                   />
+                )}
+              </div>
+
+              {/* Si es categoría REPUESTOS: seleccionar en qué equipo se aplicó */}
+              {categoria === 'Repuestos' && (
+                <div className="form-group" style={{ marginBottom: '0.25rem', background: 'var(--bg-card-hover)', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                  <label className="form-label" style={{ color: 'var(--accent-cyan)', fontWeight: 700 }}>
+                    🔧 Equipo / Instrumental Destino (donde se aplicó)
+                  </label>
+                  <select
+                    className="form-select"
+                    value={equipoDestino}
+                    onChange={(e) => setEquipoDestino(e.target.value)}
+                  >
+                    <option value="">-- Sin equipo específico / Almacén general --</option>
+                    {inventario
+                      .filter(i => i.categoria === 'Instrumental' || i.categoria === 'Movilidad' || i.categoria === 'Herramientas')
+                      .map(it => (
+                        <option key={it.id} value={`${it.nombre} [${it.codigo_interno || it.id}]`}>
+                          [{it.categoria}] {it.codigo_interno ? `[${it.codigo_interno}] ` : ''}{it.nombre}
+                        </option>
+                      ))}
+                  </select>
                 </div>
+              )}
+
+              <div className="form-group" style={{ marginBottom: '0.25rem' }}>
+                <label className="form-label">Cantidad *</label>
+                <input 
+                  type="number" 
+                  step="any" 
+                  className="form-input" 
+                  value={cantidad} 
+                  onChange={(e) => setCantidad(e.target.value)} 
+                  required 
+                />
               </div>
 
               <div className="form-group" style={{ marginBottom: '0.25rem' }}>

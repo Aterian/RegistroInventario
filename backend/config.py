@@ -189,6 +189,29 @@ SHEET_MOVIMIENTOS_TAB = "movimientos_stock"
 SHEET_CONTROL_M_TAB = "3_1_Control_M"
 SHEET_CONTROL_I_TAB = "2_1_Control_I"
 
+REGISTRO_GASTOS_COLUMNS = [
+    "id_gasto",
+    "id_viaje",
+    "id_proyecto",
+    "proyecto",
+    "tipo",
+    "elemento",
+    "fecha_s",
+    "fecha_r",
+    "unidad_s",
+    "unidad_r",
+    "costo_u",
+    "costo_t",
+    "user_s",
+    "firma_s",
+    "user_r",
+    "firma_r",
+    "fecha_hora_s",
+    "fecha_hora_r",
+    "unidad_medida"
+]
+
+
 CATALOG_TABS = [
     "1_0_Indumentaria",
     "2_0_Instrumental",

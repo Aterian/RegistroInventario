@@ -65,33 +65,37 @@ jobs:
 
       - name: Preparar archivo APK final
         run: |
-          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk ./Ingeap-Inventario-v1.1.0.apk
+          cp frontend/android/app/build/outputs/apk/debug/app-debug.apk ./Ingeap-Inventario-v1.2.0.apk
 
       - name: Publicar artefacto APK en Actions
         uses: actions/upload-artifact@v4
         with:
           name: Ingeap-Inventario-APK
-          path: Ingeap-Inventario-v1.1.0.apk
+          path: Ingeap-Inventario-v1.2.0.apk
           retention-days: 30
 
       - name: Publicar Release en GitHub (Descarga directa para celular)
         if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && inputs.crear_release == true)
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.1.0-mobile' }}
-          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.1.0' }}
+          tag_name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'v1.2.0-mobile' }}
+          name: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'Ingeap Inventario Celular v1.2.0' }}
           body: |
-            ### 📱 Ingeap Inventario para Celular (Android)
+            ### 📱 Ingeap Inventario para Celular (Android) - v1.2.0
             
-            - **Version:** 1.1.0
-            - **Novedades:**
-              - Conexion 24/7 autonoma a Google Cloud (Google Apps Script).
-              - Funciona sin necesidad de tener encendida la PC de escritorio.
-              - Soporte completo Offline en terreno sin senal.
-              - Subida directa de firmas a Google Drive.
+            - **Novedades de esta versión:**
+              - 🏠 **Menú Inicial:** Pantalla de bienvenida con accesos rápidos a todos los módulos.
+              - 📷 **Lector QR Integrado:** Escaneo instantáneo de códigos de barras y QR con la cámara del teléfono en salidas.
+              - 🏷️ **Etiquetas QR Imprimibles:** Generación de etiquetas en alta resolución y descarga de PDF para rotular equipos.
+              - ⚠️ **Control de Mantenimiento:** Alertas visuales para instrumental en calibración/mantenimiento (sin bloqueo de salida).
+              - ⏱️ **Costeo Inteligente:** Soporte de días de uso para adicionales (bastones, trípodes) e instrumental, km para movilidad, ciclos de batería y cantidad para materiales.
+              - 📦 **Ajuste Directo de Stock:** Modificación directa de stock físico para materiales, indumentaria y herramientas.
+              - 🛒 **Solicitudes de Compra:** Selector clasificado por Áreas Operativas y Empleados de Ingeap.
+              - 🔧 **Kardex y Repuestos:** Selección de ítems de catálogo y asignación a equipos/vehículos de destino.
+              - ☁️ **Conexión 24/7:** Opera de forma autónoma conectado a Google Cloud sin requerir la PC encendida.
             
-            **Instalacion:** Descarga el archivo adjunto `Ingeap-Inventario-v1.1.0.apk` directamente en tu celular y tocalo para instalar.
-          files: Ingeap-Inventario-v1.1.0.apk
+            **Instalación:** Descarga el archivo adjunto `Ingeap-Inventario-v1.2.0.apk` directamente en tu celular y tócalo para actualizar.
+          files: Ingeap-Inventario-v1.2.0.apk
           draft: false
           prerelease: false
         env:

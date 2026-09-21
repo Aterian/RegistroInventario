@@ -107,6 +107,7 @@ def asegurar_instancia_unica():
                 hwnd = user32.FindWindowW(None, "Ingeap - Gestión de Inventario y Viajes")
                 if hwnd:
                     user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+                    user32.ShowWindow(hwnd, 5)  # SW_SHOW
                     user32.SetForegroundWindow(hwnd)
             except Exception:
                 pass
@@ -211,15 +212,17 @@ def main():
 
     def mostrar_ventana(icon=None, item=None):
         if ventana:
-            ventana.show()
             try:
-                ventana.restore()
-            except Exception:
-                pass
+                ventana.show()
+            except Exception as e:
+                logger.warning(f"Aviso en mostrar_ventana: {e}")
 
     def ocultar_ventana(icon=None, item=None):
         if ventana:
-            ventana.hide()
+            try:
+                ventana.hide()
+            except Exception:
+                pass
 
     def sincronizar_catalogo(icon=None, item=None):
         threading.Thread(target=lambda: google_service.get_catalogos(recargar=True), daemon=True).start()
@@ -269,12 +272,17 @@ def main():
         menu
     )
 
+    def al_minimizar():
+        if ventana:
+            ventana.hide()
+
     def al_cerrar():
         """Minimiza a la bandeja del sistema en lugar de cerrar el proceso."""
         if ventana:
             ventana.hide()
         return False
 
+    ventana.events.minimized += al_minimizar
     ventana.events.closing += al_cerrar
 
     # Ejecutar icono de bandeja en hilo desacoplado

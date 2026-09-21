@@ -117,7 +117,44 @@ class ApiBridge:
             logger.error(f"[ApiBridge] Error en eliminar_elemento: {e}")
             return {"success": False, "error": str(e)}
 
+    def marcar_mantenimiento(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Marca un elemento como En Mantenimiento."""
+        try:
+            id_elem = data.get("id_elemento")
+            tipo_m = data.get("tipo_mantenimiento", "Preventivo")
+            fecha_ini = data.get("fecha_inicio")
+            obs = data.get("observaciones", "")
+            res = google_service.marcar_mantenimiento(id_elem, tipo_m, fecha_ini, obs)
+            return {"success": True, "resultado": res}
+        except Exception as e:
+            logger.error(f"[ApiBridge] Error en marcar_mantenimiento: {e}")
+            return {"success": False, "error": str(e)}
+
+    def finalizar_mantenimiento(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Finaliza el mantenimiento registrando la fecha de fin y retornando a inventario."""
+        try:
+            id_elem = data.get("id_elemento")
+            res = google_service.finalizar_mantenimiento(id_elem)
+            return {"success": True, "resultado": res}
+        except Exception as e:
+            logger.error(f"[ApiBridge] Error en finalizar_mantenimiento: {e}")
+            return {"success": False, "error": str(e)}
+
+    def actualizar_stock(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """Actualiza el stock actual de un elemento directamente."""
+        try:
+            cat = data.get("categoria", "Materiales")
+            id_elem = data.get("id_elemento")
+            stk = float(data.get("nuevo_stock", data.get("stock_actual", 0)))
+            obs = data.get("observaciones", "")
+            res = google_service.actualizar_stock_elemento(cat, id_elem, stk, obs)
+            return {"success": True, "resultado": res}
+        except Exception as e:
+            logger.error(f"[ApiBridge] Error en actualizar_stock: {e}")
+            return {"success": False, "error": str(e)}
+
     # ------------------------------------------------------------------
+
     # TABLERO DE ALERTAS Y STOCK MÍNIMO
     # ------------------------------------------------------------------
     def get_alertas(self) -> Dict[str, Any]:

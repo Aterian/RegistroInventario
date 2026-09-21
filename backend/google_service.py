@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 
 import gspread
+from gspread.utils import rowcol_to_a1
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
@@ -39,6 +40,11 @@ from backend.database import (
     mark_viaje_as_synced,
     get_viajes_activos_local,
     get_viaje_by_id_local,
+    save_elemento_catalogo_local,
+    save_stock_minimo_local,
+    delete_elemento_catalogo_local,
+    update_elemento_mantenimiento_local,
+    update_elemento_stock_local,
     get_todos_los_viajes_local,
     save_solicitud_local,
     get_solicitudes_local,
@@ -50,6 +56,7 @@ from backend.database import (
     save_elemento_catalogo_local,
     delete_elemento_catalogo_local
 )
+
 
 logger = logging.getLogger("ingeap.google_service")
 
@@ -75,8 +82,11 @@ REGISTRO_GASTOS_COLUMNS = [
     "firma_s",
     "user_r",
     "firma_r",
-    "fecha_hora"
+    "fecha_hora_s",
+    "fecha_hora_r",
+    "unidad_medida"
 ]
+
 
 SOLICITUDES_COLUMNS = [
     "id_solicitud",
@@ -133,6 +143,40 @@ def parse_date_flexible(d_str: Any) -> Optional[datetime]:
         except Exception:
             pass
     return None
+
+
+def calcular_unidad_medida(tipo: str, elemento: str, modo_costeo: str = "") -> str:
+    """Calcula la unidad de medida según categoría o modo de costeo configurado."""
+    if modo_costeo:
+        mc = modo_costeo.strip().lower()
+        if "km" in mc:
+            return "km"
+        if "dia" in mc or "día" in mc:
+            return "días de uso"
+        if "ciclo" in mc:
+            return "ciclos de batería"
+        if "cant" in mc:
+            return "cantidad"
+        if "ning" in mc or "sin" in mc:
+            return ""
+        return modo_costeo
+
+    t = (tipo or "").strip().lower()
+    e = (elemento or "").strip().lower()
+    if "movilidad" in t:
+        return "km"
+    elif "dron" in t or "dron" in e:
+        return "ciclos de batería"
+    elif "instrumental" in t:
+        return "días de uso"
+    elif "adicional" in t:
+        return "días de uso"
+    elif "accesorio" in t:
+        return ""
+    elif "material" in t or "herramienta" in t or "indumentaria" in t or "repuesto" in t:
+        return "cantidad"
+    return "cantidad"
+
 
 
 class GoogleService:
@@ -616,7 +660,31 @@ class GoogleService:
                     if not item_id and not codigo_int and not nombre:
                         continue
 
-                    final_id = item_id if item_id else f"{categoria_limpia}_{codigo_int or uuid.uuid4().hex[:6]}"
+                    modo_costeo = str(r.get("Modo_costeo") or r.get("modo_costeo") or "").strip()
+                    if not modo_costeo:
+                        if categoria_limpia == "Movilidad":
+                            modo_costeo = "KM"
+                        elif categoria_limpia == "Instrumental":
+                            modo_costeo = "Ciclos de batería" if es_dron else "Días de uso"
+                        elif categoria_limpia == "Adicional":
+                            modo_costeo = "Días de uso"
+                        elif categoria_limpia == "Accesorios":
+                            modo_costeo = ""
+                        elif categoria_limpia in ["Materiales", "Herramientas", "Indumentaria", "Repuestos"]:
+                            modo_costeo = "Cantidad"
+
+                    en_mantenimiento = bool(r.get("En_mantenimiento") or r.get("en_mantenimiento") or False)
+                    tipo_mantenimiento = str(r.get("Tipo_mantenimiento") or r.get("tipo_mantenimiento") or "").strip()
+                    fecha_inicio_mantenimiento = str(r.get("Fecha_inicio_mantenimiento") or r.get("fecha_inicio_mantenimiento") or "").strip()
+                    fecha_fin_mantenimiento = str(r.get("Fecha_fin_mantenimiento") or r.get("fecha_fin_mantenimiento") or "").strip()
+
+                    if "Stock_actual" in r or "stock_actual" in r or "Stock" in r:
+                        try:
+                            stock_actual = float(r.get("Stock_actual") or r.get("stock_actual") or r.get("Stock") or stock_actual)
+                        except Exception:
+                            pass
+
+                    final_id = str(item_id if item_id else (codigo_int if codigo_int else f"ITEM_{len(unified_items)+1}")).strip()
 
                     unified_items.append({
                         "id": final_id,
@@ -631,13 +699,41 @@ class GoogleService:
                         "stock_minimo": stock_minimo,
                         "stock_actual": stock_actual,
                         "elementos_compatibles_ids": compatibles_ids,
-                        "es_dron": es_dron
+                        "es_dron": es_dron,
+                        "modo_costeo": modo_costeo,
+                        "en_mantenimiento": en_mantenimiento,
+                        "tipo_mantenimiento": tipo_mantenimiento,
+                        "fecha_inicio_mantenimiento": fecha_inicio_mantenimiento,
+                        "fecha_fin_mantenimiento": fecha_fin_mantenimiento
                     })
             except Exception as e:
                 logger.warning(f"No se pudo procesar pestaña '{tab_name}': {e}")
                 continue
 
+        # Superponer ajustes locales de SQLite (mantenimiento, stock, modo de costeo)
+        try:
+            local_items = get_catalogo_cache_local()
+            local_map = {str(it.get("id")): it for it in local_items if it.get("id")}
+            for u in unified_items:
+                loc = local_map.get(str(u["id"]))
+                if loc:
+                    if "en_mantenimiento" in loc:
+                        u["en_mantenimiento"] = bool(loc["en_mantenimiento"])
+                    if "tipo_mantenimiento" in loc:
+                        u["tipo_mantenimiento"] = loc["tipo_mantenimiento"]
+                    if "fecha_inicio_mantenimiento" in loc:
+                        u["fecha_inicio_mantenimiento"] = loc["fecha_inicio_mantenimiento"]
+                    if "fecha_fin_mantenimiento" in loc:
+                        u["fecha_fin_mantenimiento"] = loc["fecha_fin_mantenimiento"]
+                    if "stock_actual" in loc and loc["stock_actual"] is not None:
+                        u["stock_actual"] = float(loc["stock_actual"])
+                    if "modo_costeo" in loc and loc["modo_costeo"]:
+                        u["modo_costeo"] = loc["modo_costeo"]
+        except Exception as e_loc:
+            logger.warning(f"Error superponiendo caché local de catálogo: {e_loc}")
+
         return unified_items
+
 
     # ----------------------------------------------------------------------
     # TABLERO DE CONTROL Y ALERTAS (DOCUMENTOS Y STOCK)
@@ -905,9 +1001,109 @@ class GoogleService:
 
         return True
 
+    def marcar_mantenimiento(
+        self,
+        id_elemento: str,
+        tipo_mantenimiento: str,
+        fecha_inicio: Optional[str] = None,
+        observaciones: str = ""
+    ) -> Dict[str, Any]:
+        """Marca un elemento como En Mantenimiento con su tipo y fecha de inicio."""
+        if not fecha_inicio:
+            fecha_inicio = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        res = update_elemento_mantenimiento_local(
+            id_elemento=id_elemento,
+            en_mantenimiento=True,
+            tipo_mantenimiento=tipo_mantenimiento,
+            fecha_inicio=fecha_inicio,
+            fecha_fin="",
+            observaciones=observaciones
+        )
+        self._memory_cache["data"] = None
+
+        self.registrar_movimiento({
+            "tipo_movimiento": "Ingreso a Mantenimiento",
+            "id_elemento": id_elemento,
+            "categoria": res.get("categoria", "") if res else "",
+            "elemento": res.get("nombre", f"Item #{id_elemento}") if res else f"Item #{id_elemento}",
+            "codigo_interno": res.get("codigo_interno", "") if res else "",
+            "cantidad": 1.0,
+            "usuario": "Oficina / Mantenimiento",
+            "observaciones": f"Mantenimiento ({tipo_mantenimiento}): {observaciones}".strip()
+        })
+        return res or {"id": id_elemento, "en_mantenimiento": True, "tipo_mantenimiento": tipo_mantenimiento}
+
+    def finalizar_mantenimiento(
+        self,
+        id_elemento: str
+    ) -> Dict[str, Any]:
+        """Finaliza el mantenimiento registrando automáticamente la fecha_fin actual."""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        res = update_elemento_mantenimiento_local(
+            id_elemento=id_elemento,
+            en_mantenimiento=False,
+            fecha_fin=now_str
+        )
+        self._memory_cache["data"] = None
+
+        self.registrar_movimiento({
+            "tipo_movimiento": "Retorno de Mantenimiento",
+            "id_elemento": id_elemento,
+            "categoria": res.get("categoria", "") if res else "",
+            "elemento": res.get("nombre", f"Item #{id_elemento}") if res else f"Item #{id_elemento}",
+            "codigo_interno": res.get("codigo_interno", "") if res else "",
+            "cantidad": 1.0,
+            "usuario": "Oficina / Mantenimiento",
+            "observaciones": f"Reingreso al inventario operativo disponible"
+        })
+        return res or {"id": id_elemento, "en_mantenimiento": False, "fecha_fin": now_str}
+
+    def actualizar_stock_elemento(
+        self,
+        categoria: str,
+        id_elemento: str,
+        nuevo_stock: float,
+        observaciones: str = ""
+    ) -> Dict[str, Any]:
+        """Actualiza directamente el stock actual de un elemento (Materiales, Indumentaria, EPP)."""
+        res = update_elemento_stock_local(id_elemento, nuevo_stock)
+        self._memory_cache["data"] = None
+
+        # Sincronizar en Sheets si es posible
+        if self.is_connected and self.gc:
+            try:
+                conf = CATEGORY_CONFIG.get(categoria, CATEGORY_CONFIG["Materiales"])
+                tab_name = conf["tab"]
+                sh = self._open_inventario_sheet()
+                ws = sh.worksheet(tab_name)
+                headers = ws.row_values(1)
+                all_ids = ws.col_values(1)
+                if str(id_elemento) in all_ids:
+                    row_idx = all_ids.index(str(id_elemento)) + 1
+                    for i, h in enumerate(headers):
+                        if h.lower() in ["cantidad", "stock_actual", "stock"]:
+                            ws.update_cell(row_idx, i + 1, nuevo_stock)
+                            break
+            except Exception as e:
+                logger.warning(f"No se pudo sincronizar nuevo stock en Sheets para {id_elemento}: {e}")
+
+        self.registrar_movimiento({
+            "tipo_movimiento": "Ajuste de Stock",
+            "id_elemento": id_elemento,
+            "categoria": categoria,
+            "elemento": res.get("nombre", f"Item #{id_elemento}") if res else f"Item #{id_elemento}",
+            "codigo_interno": res.get("codigo_interno", "") if res else "",
+            "cantidad": float(nuevo_stock),
+            "usuario": "Oficina / Inventario",
+            "observaciones": observaciones or f"Ajuste directo de stock a {nuevo_stock}"
+        })
+        return res or {"id": id_elemento, "stock_actual": nuevo_stock}
+
     # ----------------------------------------------------------------------
     # SOLICITUDES Y COMPRAS PENDIENTES
     # ----------------------------------------------------------------------
+
     def _get_or_create_solicitudes_ws(self) -> Optional[gspread.Worksheet]:
         """Obtiene o crea automáticamente la pestaña 'solicitudes_compras'."""
         if not self.is_connected or not self.gc:
@@ -1062,7 +1258,7 @@ class GoogleService:
     # TABLA DESTINO: REGISTRO DE GASTOS (SALIDAS Y RETORNOS)
     # ----------------------------------------------------------------------
     def _get_or_create_registro_gastos_ws(self) -> Optional[gspread.Worksheet]:
-        """Obtiene o crea automáticamente la pestaña 'registro_gastos' en Sheets."""
+        """Obtiene o crea automáticamente la pestaña 'registro_gastos' en Sheets con columnas completas."""
         if not self.is_connected or not self.gc:
             return None
 
@@ -1076,6 +1272,18 @@ class GoogleService:
                 sh = self._open_sheet(target_doc)
                 try:
                     ws = sh.worksheet(SHEET_REGISTRO_GASTOS_TAB)
+                    # Asegurar columnas nuevas en la fila de encabezados si no existen
+                    try:
+                        headers = ws.row_values(1)
+                        if headers:
+                            missing = [c for c in REGISTRO_GASTOS_COLUMNS if c not in headers]
+                            if missing:
+                                logger.info(f"Ampliando encabezados de '{SHEET_REGISTRO_GASTOS_TAB}' con: {missing}")
+                                for col_name in missing:
+                                    ws.update_cell(1, len(headers) + 1, col_name)
+                                    headers.append(col_name)
+                    except Exception as err_h:
+                        logger.warning(f"No se pudieron verificar encabezados de registro_gastos: {err_h}")
                     return ws
                 except gspread.WorksheetNotFound:
                     logger.info(f"Creando pestaña '{SHEET_REGISTRO_GASTOS_TAB}' en '{target_doc}'...")
@@ -1111,6 +1319,7 @@ class GoogleService:
                 elemento = f"[{item.get('codigo_interno')}] {elemento}"
             unidad_s = float(item.get("unidad_s", 0.0) or 0.0)
             costo_u = float(item.get("costo_u", 0.0) or 0.0)
+            u_medida = item.get("unidad_medida") or calcular_unidad_medida(tipo, elemento, item.get("modo_costeo", ""))
 
             for proj in proyectos:
                 id_gasto = str(uuid.uuid4())
@@ -1131,6 +1340,9 @@ class GoogleService:
                     "firma_s": firma_s,
                     "user_r": "",
                     "firma_r": "",
+                    "fecha_hora_s": now_iso,
+                    "fecha_hora_r": "",
+                    "unidad_medida": u_medida,
                     "fecha_hora": now_iso
                 }
                 filas_generadas.append(fila)
@@ -1163,9 +1375,14 @@ class GoogleService:
         ws = self._get_or_create_registro_gastos_ws()
         if ws:
             try:
+                headers = ws.row_values(1)
+                header_to_idx = {h.lower().strip(): i for i, h in enumerate(headers)}
                 sheet_rows = []
                 for f in filas_generadas:
-                    row_vals = [f.get(col, "") for col in REGISTRO_GASTOS_COLUMNS]
+                    row_vals = ["" for _ in range(len(headers))]
+                    for k, val in f.items():
+                        if k.lower() in header_to_idx:
+                            row_vals[header_to_idx[k.lower()]] = val
                     sheet_rows.append(row_vals)
                 ws.append_rows(sheet_rows)
                 mark_viaje_as_synced(id_viaje)
@@ -1221,20 +1438,26 @@ class GoogleService:
                         u_s = float(r.get("unidad_s", 0.0) or 0.0)
                         costo_u = float(r.get("costo_u", 0.0) or 0.0)
                         tipo = str(r.get("tipo", "")).lower()
+                        modo_c = str(r.get("modo_costeo", "")).lower()
 
                         p_id = str(r.get("id_proyecto", ""))
                         pct_aplicable = prorrateo_map.get(p_id, 1.0 / max(len(prorrateos), 1))
 
-                        # Reglas de Costeo según categoría
-                        if "movilidad" in tipo:
+                        # Reglas de Costeo según modo de costeo / categoría
+                        if "km" in modo_c or ("movilidad" in tipo and not modo_c):
                             # Odómetro: delta km
                             delta = max(0.0, u_r - u_s)
                             costo_t = delta * costo_u * pct_aplicable
-                        elif "instrumental" in tipo:
+                        elif "dias" in modo_c or "días" in modo_c or ("instrumental" in tipo and not modo_c) or ("adicional" in tipo and not modo_c):
                             # Días de uso
                             costo_t = u_r * costo_u * pct_aplicable
+                        elif "ciclo" in modo_c or ("dron" in tipo and not modo_c):
+                            # Ciclos de batería
+                            costo_t = max(0.0, u_r - u_s) * costo_u * pct_aplicable if u_r > u_s else u_r * costo_u * pct_aplicable
+                        elif "ning" in modo_c or "sin" in modo_c:
+                            costo_t = 0.0
                         else:
-                            # Materiales: consumo neto
+                            # Materiales / Herramientas: consumo neto
                             consumo = max(0.0, u_s - u_r)
                             costo_t = consumo * costo_u * pct_aplicable
 
@@ -1243,23 +1466,36 @@ class GoogleService:
                         r["fecha_r"] = fecha_r
                         r["user_r"] = user_r
                         r["firma_r"] = firma_r
+                        r["fecha_hora_r"] = now_iso
                         filas_actualizadas.append(r)
 
-            # Sincronizar actualización en lote en Google Sheets
+            # Sincronizar actualización en lote en Google Sheets mediante lookup dinámico de columnas
             if ws and filas_actualizadas:
                 try:
                     all_ids = ws.col_values(1)
+                    headers = ws.row_values(1)
+                    header_to_col = {h.lower().strip(): i + 1 for i, h in enumerate(headers)}
                     cell_updates = []
                     for f in filas_actualizadas:
                         g_id = f.get("id_gasto")
                         if g_id in all_ids:
                             row_idx = all_ids.index(g_id) + 1
-                            cell_updates.append({"range": f"H{row_idx}", "values": [[fecha_r]]})
-                            cell_updates.append({"range": f"J{row_idx}", "values": [[f.get("unidad_r")]]})
-                            cell_updates.append({"range": f"L{row_idx}", "values": [[f.get("costo_t")]]})
-                            cell_updates.append({"range": f"O{row_idx}", "values": [[user_r]]})
-                            cell_updates.append({"range": f"P{row_idx}", "values": [[firma_r]]})
-                    ws.batch_update(cell_updates)
+                            updates = [
+                                ("fecha_r", fecha_r),
+                                ("unidad_r", f.get("unidad_r")),
+                                ("costo_t", f.get("costo_t")),
+                                ("user_r", user_r),
+                                ("firma_r", firma_r),
+                                ("fecha_hora_r", now_iso),
+                                ("fecha_hora", now_iso)
+                            ]
+                            for col_name, val in updates:
+                                if col_name in header_to_col:
+                                    col_idx = header_to_col[col_name]
+                                    a1 = rowcol_to_a1(row_idx, col_idx)
+                                    cell_updates.append({"range": a1, "values": [[val]]})
+                    if cell_updates:
+                        ws.batch_update(cell_updates)
                     logger.info(f"Retorno de viaje {id_viaje} sincronizado en Sheets.")
                 except Exception as e:
                     logger.error(f"Error en batch_update retorno: {e}")
@@ -1278,12 +1514,17 @@ class GoogleService:
                     p_id = str(g.get("id_proyecto", ""))
                     pct = prorrateo_map.get(p_id, 1.0)
                     tipo = str(g.get("tipo", "")).lower()
+                    modo_c = str(g.get("modo_costeo", "")).lower()
 
-                    if "movilidad" in tipo:
+                    if "km" in modo_c or ("movilidad" in tipo and not modo_c):
                         delta = max(0.0, u_r - u_s)
                         costo_t = delta * costo_u * pct
-                    elif "instrumental" in tipo:
+                    elif "dias" in modo_c or "días" in modo_c or ("instrumental" in tipo and not modo_c) or ("adicional" in tipo and not modo_c):
                         costo_t = u_r * costo_u * pct
+                    elif "ciclo" in modo_c or ("dron" in tipo and not modo_c):
+                        costo_t = max(0.0, u_r - u_s) * costo_u * pct if u_r > u_s else u_r * costo_u * pct
+                    elif "ning" in modo_c or "sin" in modo_c:
+                        costo_t = 0.0
                     else:
                         consumo = max(0.0, u_s - u_r)
                         costo_t = consumo * costo_u * pct

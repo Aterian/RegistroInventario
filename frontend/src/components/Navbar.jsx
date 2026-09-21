@@ -1,4 +1,5 @@
 import { 
+  Home,
   Truck, 
   Layers, 
   PlusCircle, 
@@ -14,6 +15,7 @@ import {
   ArrowLeftRight
 } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
+import logoIngeap from '../assets/logo_ingeap.png';
 
 export const Navbar = ({ 
   currentTab, 
@@ -69,23 +71,23 @@ export const Navbar = ({
         gap: '0.75rem',
       }}>
         {/* Brand & Title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.875rem' }}>
-          <div style={{
-            width: '38px',
-            height: '38px',
-            borderRadius: '10px',
-            backgroundColor: 'var(--primary-red)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: '#fff',
-            fontWeight: 800,
-            fontSize: '1.25rem',
-            boxShadow: '0 4px 12px var(--primary-red-glow)',
-            fontFamily: 'var(--font-display)',
-          }}>
-            I
-          </div>
+        <div 
+          style={{ display: 'flex', alignItems: 'center', gap: '0.875rem', cursor: 'pointer' }}
+          onClick={() => setCurrentTab('inicio')}
+          title="Ir al Menú Principal"
+        >
+          <img 
+            src={logoIngeap} 
+            alt="Ingeap Logo" 
+            style={{
+              height: '36px',
+              width: 'auto',
+              borderRadius: '6px',
+              objectFit: 'contain',
+              background: 'rgba(255,255,255,0.06)',
+              padding: '2px 4px'
+            }}
+          />
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
               <span style={{ 
@@ -125,8 +127,14 @@ export const Navbar = ({
           paddingBottom: '2px',
         }}>
           <button
+            onClick={() => setCurrentTab('inicio')}
+            className={`btn btn-sm ${currentTab === 'inicio' ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <Home size={15} /> Inicio
+          </button>
+          <button
             onClick={() => setCurrentTab('dashboard')}
-            className={`btn btn-sm ${currentTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`}
+            className={`btn btn-sm ${(currentTab === 'dashboard' || currentTab === 'viajes') ? 'btn-primary' : 'btn-secondary'}`}
           >
             <Truck size={15} /> Viajes
           </button>

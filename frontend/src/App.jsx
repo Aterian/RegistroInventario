@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Navbar } from './components/Navbar';
+import { HomeMenuView } from './components/HomeMenuView';
 import { Dashboard } from './components/Dashboard';
 import { SalidaForm } from './components/SalidaForm';
 import { RetornoModal } from './components/RetornoModal';
@@ -13,7 +14,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { api } from './api';
 
 export function App() {
-  const [currentTab, setCurrentTab] = useState('dashboard');
+  const [currentTab, setCurrentTab] = useState('inicio');
   const [serverStatus, setServerStatus] = useState(null);
   const [catalogos, setCatalogos] = useState({ proyectos: [], usuarios: [], inventario: [], categorias: [] });
   const [viajesActivos, setViajesActivos] = useState([]);
@@ -135,7 +136,18 @@ export function App() {
 
       {/* Contenido Principal según Pestaña */}
       <main className="main-content">
-        {currentTab === 'dashboard' && (
+        {currentTab === 'inicio' && (
+          <HomeMenuView
+            setCurrentTab={setCurrentTab}
+            onOpenSalida={() => setCurrentTab('salida')}
+            viajesActivosCount={viajesActivos.length}
+            alertasCount={alertasCount}
+            totalItemsCount={catalogos.inventario?.length || 0}
+            solicitudesPendientesCount={0}
+          />
+        )}
+
+        {(currentTab === 'dashboard' || currentTab === 'viajes') && (
           <Dashboard
             viajesActivos={viajesActivos}
             loading={loading}
@@ -149,7 +161,7 @@ export function App() {
           <SalidaForm
             catalogos={catalogos}
             onSuccess={handleSalidaSuccess}
-            onCancel={() => setCurrentTab('dashboard')}
+            onCancel={() => setCurrentTab('inicio')}
           />
         )}
 
@@ -178,12 +190,15 @@ export function App() {
         )}
 
         {currentTab === 'movimientos' && (
-          <MovimientosViewer />
+          <MovimientosViewer 
+            inventario={catalogos.inventario}
+          />
         )}
 
         {currentTab === 'solicitudes' && (
           <SolicitudesViewer
             proyectos={catalogos.proyectos}
+            usuarios={catalogos.usuarios}
             prefilledItem={solicitudPreload}
             onClearPrefilled={() => setSolicitudPreload(null)}
           />

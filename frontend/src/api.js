@@ -4,6 +4,7 @@
  * 1. MODO ESCRITORIO (PyWebView):
  *    Se comunica nativamente con Python mediante `window.pywebview.api` (ApiBridge),
  *    con latencia cero, sin necesidad de servidores HTTP en localhost ni puertos ocupados.
+ *    Espera de forma segura el evento `pywebviewready` para inicializar sin errores.
  * 
  * 2. MODO MÓVIL / NUBE INDEPENDIENTE (Android / Capacitor / Navegador):
  *    Se comunica de forma 100% directa y continua con Google Cloud mediante
@@ -12,8 +13,58 @@
  *    Incluye soporte OFFLINE completo para operaciones en zonas sin cobertura celular.
  */
 
+let cachedBridge = null;
+let bridgePromise = null;
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pywebviewready', () => {
+    if (window.pywebview && window.pywebview.api) {
+      cachedBridge = window.pywebview.api;
+    }
+  }, { once: true });
+}
+
+export const getDesktopBridge = async () => {
+  if (cachedBridge) return cachedBridge;
+  if (typeof window === 'undefined') return null;
+  if (window.pywebview && window.pywebview.api) {
+    cachedBridge = window.pywebview.api;
+    return cachedBridge;
+  }
+
+  if (!bridgePromise) {
+    bridgePromise = new Promise((resolve) => {
+      let settled = false;
+      const onReady = () => {
+        if (!settled && window.pywebview && window.pywebview.api) {
+          settled = true;
+          cachedBridge = window.pywebview.api;
+          resolve(cachedBridge);
+        }
+      };
+
+      window.addEventListener('pywebviewready', onReady, { once: true });
+
+      // Si después de 400ms no hay PyWebView, es móvil o navegador web
+      setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          if (window.pywebview && window.pywebview.api) {
+            cachedBridge = window.pywebview.api;
+          } else {
+            cachedBridge = null;
+          }
+          resolve(cachedBridge);
+        }
+      }, 400);
+    });
+  }
+
+  return await bridgePromise;
+};
+
 export const isDesktopApp = () => {
-  return typeof window !== 'undefined' && Boolean(window.pywebview && window.pywebview.api);
+  return typeof window !== 'undefined' && Boolean(cachedBridge || (window.pywebview && window.pywebview.api));
 };
 
 export const getGasUrl = () => {
@@ -147,8 +198,9 @@ const handleFetchResponse = async (response) => {
 export const api = {
   // Estado del sistema
   getEstado: async () => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_estado();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_estado) {
+      return await bridge.get_estado();
     }
     if (getGasUrl()) {
       return await callGas('getEstado', {}, 'GET');
@@ -159,8 +211,9 @@ export const api = {
 
   // Catálogos completos
   getCatalogos: async (recargar = false) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_catalogos(recargar);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_catalogos) {
+      return await bridge.get_catalogos(recargar);
     }
 
     // Móvil / Web
@@ -201,8 +254,9 @@ export const api = {
 
   // CRUD Catálogo
   crearElemento: async (data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.crear_elemento(data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.crear_elemento) {
+      return await bridge.crear_elemento(data);
     }
     if (getGasUrl()) {
       return await callGas('crearElemento', data, 'POST');
@@ -216,8 +270,9 @@ export const api = {
   },
 
   editarElemento: async (categoria, idElemento, data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.editar_elemento(categoria, idElemento, data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.editar_elemento) {
+      return await bridge.editar_elemento(categoria, idElemento, data);
     }
     if (getGasUrl()) {
       return await callGas('editarElemento', { categoria, id_elemento: idElemento, ...data }, 'POST');
@@ -231,8 +286,9 @@ export const api = {
   },
 
   eliminarElemento: async (categoria, idElemento) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.eliminar_elemento(categoria, idElemento);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.eliminar_elemento) {
+      return await bridge.eliminar_elemento(categoria, idElemento);
     }
     if (getGasUrl()) {
       return await callGas('eliminarElemento', { categoria, id_elemento: idElemento }, 'POST');
@@ -243,10 +299,63 @@ export const api = {
     return handleFetchResponse(res);
   },
 
+  marcarMantenimiento: async (idElemento, tipoMantenimiento = 'Preventivo', fechaInicio = '', observaciones = '') => {
+    const payload = { id_elemento: idElemento, tipo_mantenimiento: tipoMantenimiento, fecha_inicio: fechaInicio, observaciones: observaciones };
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.marcar_mantenimiento) {
+      return await bridge.marcar_mantenimiento(payload);
+    }
+    if (getGasUrl()) {
+      return await callGas('marcarMantenimiento', payload, 'POST');
+    }
+    const res = await fetch(`${getApiBaseUrl()}/catalogos/mantenimiento/${encodeURIComponent(idElemento)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleFetchResponse(res);
+  },
+
+  finalizarMantenimiento: async (idElemento) => {
+    const payload = { id_elemento: idElemento };
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.finalizar_mantenimiento) {
+      return await bridge.finalizar_mantenimiento(payload);
+    }
+    if (getGasUrl()) {
+      return await callGas('finalizarMantenimiento', payload, 'POST');
+    }
+    const res = await fetch(`${getApiBaseUrl()}/catalogos/mantenimiento-fin/${encodeURIComponent(idElemento)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleFetchResponse(res);
+  },
+
+  actualizarStock: async (categoria, idElemento, nuevoStock, observaciones = '') => {
+    const payload = { categoria, id_elemento: idElemento, nuevo_stock: nuevoStock, stock_actual: nuevoStock, observaciones };
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.actualizar_stock) {
+      return await bridge.actualizar_stock(payload);
+    }
+    if (getGasUrl()) {
+      return await callGas('actualizarStock', payload, 'POST');
+    }
+    const res = await fetch(`${getApiBaseUrl()}/catalogos/stock/${encodeURIComponent(categoria)}/${encodeURIComponent(idElemento)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return handleFetchResponse(res);
+  },
+
+
   // Tablero de Alertas
   getAlertas: async () => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_alertas();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_alertas) {
+      return await bridge.get_alertas();
     }
     if (getGasUrl()) {
       return await callGas('getAlertas', {}, 'GET');
@@ -256,8 +365,9 @@ export const api = {
   },
 
   setStockMinimo: async (idElemento, stockMinimo) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.set_stock_minimo(idElemento, stockMinimo);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.set_stock_minimo) {
+      return await bridge.set_stock_minimo(idElemento, stockMinimo);
     }
     if (getGasUrl()) {
       return await callGas('setStockMinimo', { id_elemento: idElemento, stock_minimo: stockMinimo }, 'POST');
@@ -272,8 +382,9 @@ export const api = {
 
   // Solicitudes de compra
   getSolicitudes: async (estado = null) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_solicitudes(estado);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_solicitudes) {
+      return await bridge.get_solicitudes(estado);
     }
     if (getGasUrl()) {
       return await callGas('getSolicitudes', { estado }, 'GET');
@@ -284,8 +395,9 @@ export const api = {
   },
 
   crearSolicitud: async (data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.crear_solicitud(data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.crear_solicitud) {
+      return await bridge.crear_solicitud(data);
     }
     if (getGasUrl()) {
       return await callGas('crearSolicitud', data, 'POST');
@@ -299,8 +411,9 @@ export const api = {
   },
 
   actualizarSolicitud: async (idSolicitud, estado, observaciones = null) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.actualizar_solicitud(idSolicitud, estado, observaciones);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.actualizar_solicitud) {
+      return await bridge.actualizar_solicitud(idSolicitud, estado, observaciones);
     }
     if (getGasUrl()) {
       return await callGas('actualizarSolicitud', { id_solicitud: idSolicitud, estado, observaciones }, 'POST');
@@ -315,8 +428,9 @@ export const api = {
 
   // Movimientos de Stock (Kardex)
   getMovimientos: async (limit = 100, filtro = null) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_movimientos(limit, filtro);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_movimientos) {
+      return await bridge.get_movimientos(limit, filtro);
     }
     if (getGasUrl()) {
       return await callGas('getMovimientos', { limit, filtro }, 'GET');
@@ -328,8 +442,9 @@ export const api = {
   },
 
   registrarMovimiento: async (data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.registrar_movimiento(data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.registrar_movimiento) {
+      return await bridge.registrar_movimiento(data);
     }
     if (getGasUrl()) {
       return await callGas('registrarMovimiento', data, 'POST');
@@ -344,8 +459,9 @@ export const api = {
 
   // Viajes en curso
   getViajesActivos: async () => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_viajes_activos();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_viajes_activos) {
+      return await bridge.get_viajes_activos();
     }
     if (getGasUrl()) {
       try {
@@ -372,8 +488,9 @@ export const api = {
 
   // Historial completo
   getTodosLosViajes: async () => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_todos_los_viajes();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_todos_los_viajes) {
+      return await bridge.get_todos_los_viajes();
     }
     if (getGasUrl()) {
       return await callGas('getTodosLosViajes', {}, 'GET');
@@ -384,8 +501,9 @@ export const api = {
 
   // Detalle de viaje
   getViajeDetalle: async (idViaje) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.get_viaje_detalle(idViaje);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.get_viaje_detalle) {
+      return await bridge.get_viaje_detalle(idViaje);
     }
     if (getGasUrl()) {
       return await callGas('getViajeDetalle', { id_viaje: idViaje }, 'GET');
@@ -396,14 +514,14 @@ export const api = {
 
   // Salida multiproyecto
   registrarSalida: async (data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.registrar_salida(data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.registrar_salida) {
+      return await bridge.registrar_salida(data);
     }
     if (getGasUrl()) {
       try {
         return await callGas('registrarSalida', data, 'POST');
       } catch (err) {
-        // Si no hay red, guardar en cola offline
         addOfflineQueue({ action: 'registrarSalida', data });
         return {
           success: true,
@@ -432,8 +550,9 @@ export const api = {
 
   // Retorno de viaje
   registrarRetorno: async (data) => {
-    if (isDesktopApp()) {
-      return await window.pywebview.api.registrar_retorno(data);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.registrar_retorno) {
+      return await bridge.registrar_retorno(data);
     }
     if (getGasUrl()) {
       try {
@@ -467,8 +586,9 @@ export const api = {
 
   // Remito PDF
   abrirRemito: async (idViaje) => {
-    if (isDesktopApp() && window.pywebview.api.abrir_remito_pdf) {
-      return await window.pywebview.api.abrir_remito_pdf(idViaje);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.abrir_remito_pdf) {
+      return await bridge.abrir_remito_pdf(idViaje);
     }
     window.open(`${getApiBaseUrl()}/viajes/${idViaje}/pdf`, '_blank');
     return { success: true };
@@ -480,43 +600,49 @@ export const api = {
 
   // Funciones exclusivas de escritorio (Bandeja, actualización)
   minimizar: async () => {
-    if (isDesktopApp() && window.pywebview.api.minimizar_a_bandeja) {
-      return await window.pywebview.api.minimizar_a_bandeja();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.minimizar_a_bandeja) {
+      return await bridge.minimizar_a_bandeja();
     }
     return { exito: true };
   },
 
   verificarActualizacion: async () => {
-    if (isDesktopApp() && window.pywebview.api.verificar_actualizacion) {
-      return await window.pywebview.api.verificar_actualizacion();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.verificar_actualizacion) {
+      return await bridge.verificar_actualizacion();
     }
     return { actualizacion_disponible: false };
   },
 
   aplicarActualizacion: async (urlDescarga) => {
-    if (isDesktopApp() && window.pywebview.api.aplicar_actualizacion) {
-      return await window.pywebview.api.aplicar_actualizacion(urlDescarga);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.aplicar_actualizacion) {
+      return await bridge.aplicar_actualizacion(urlDescarga);
     }
     return { exito: false };
   },
 
   obtenerConfigSheets: async () => {
-    if (isDesktopApp() && window.pywebview.api.obtener_config_sheets) {
-      return await window.pywebview.api.obtener_config_sheets();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.obtener_config_sheets) {
+      return await bridge.obtener_config_sheets();
     }
     return {};
   },
 
   guardarConfigSheets: async (config) => {
-    if (isDesktopApp() && window.pywebview.api.guardar_config_sheets) {
-      return await window.pywebview.api.guardar_config_sheets(config);
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.guardar_config_sheets) {
+      return await bridge.guardar_config_sheets(config);
     }
     return { exito: true };
   },
 
   probarConexionSheets: async () => {
-    if (isDesktopApp() && window.pywebview.api.probar_conexion_sheets) {
-      return await window.pywebview.api.probar_conexion_sheets();
+    const bridge = await getDesktopBridge();
+    if (bridge && bridge.probar_conexion_sheets) {
+      return await bridge.probar_conexion_sheets();
     }
     return { connected: false };
   }

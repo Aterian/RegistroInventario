@@ -158,14 +158,18 @@ Rutas HTTP expuestas a la red local (`0.0.0.0:8000`):
 - **`api.registrarSalida(data)`**: Registra el despacho multiproyecto de salida (vía Python nativo o Web App Google Cloud).
 - **`api.registrarRetorno(data)`**: Registra la devolución con cálculo de prorrateos.
 - **`api.abrirRemito(idViaje)`**: Abre el remito en el visor PDF del sistema operativo (en PC) o en pestaña nueva (en móvil/web).
+- **`api.marcarMantenimiento(data)` / `api.finalizarMantenimiento(data)`**: Registro y cierre de mantenimientos/calibraciones con trazabilidad de fechas.
+- **`api.actualizarStock(categoria, id, stock, motivo)`**: Modificación directa de stock físico para materiales, indumentaria y herramientas.
 - **`api.minimizar()` / `api.verificarActualizacion()` / `api.aplicarActualizacion()`**: Control nativo de ventana y auto-actualizador para escritorio.
 
 ### 2.2. Puente Nativo de Escritorio (`backend/api_bridge.py`)
 Módulo que expone métodos de negocio directamente a JavaScript vía `window.pywebview.api`, prescindiendo de puertos de red:
 - **`ApiBridge.get_estado()`**: Estado de Google Sheets, Drive y base de datos local SQLite.
 - **`ApiBridge.get_catalogos(recargar)`**: Lectura unificada de las 8 pestañas y nóminas de proyectos/usuarios.
-- **`ApiBridge.registrar_salida(data)` / `registrar_retorno(data)`**: Procesamiento de viajes y cálculo de costos.
-- **`ApiBridge.generar_remito_pdf(id_viaje)` / `abrir_remito_pdf(id_viaje)`**: Generación con ReportLab y apertura con la app predeterminada de Windows.
+- **`ApiBridge.registrar_salida(data)` / `registrar_retorno(data)`**: Procesamiento de viajes y cálculo de costos con dynamic headers.
+- **`ApiBridge.marcar_mantenimiento(data)` / `finalizar_mantenimiento(data)`**: Gestión de estado de mantenimiento sin bloqueo operativo.
+- **`ApiBridge.actualizar_stock(categoria, id, stock, motivo)`**: Ajuste de stock físico con registro simultáneo en el Kardex.
+- **`ApiBridge.generar_remito_pdf(id_viaje)` / `abrir_remito_pdf(id_viaje)`**: Generación con ReportLab incluyendo logo oficial de Ingeap y columna de unidad de medida.
 - **`ApiBridge.probar_conexion_sheets()` / `guardar_config_sheets(config)`**: Gestión de libros y credenciales persistentes en AppData.
 - **`ApiBridge.verificar_actualizacion()` / `aplicar_actualizacion(url)`**: Detección de versiones en GitHub Releases y reemplazo del ejecutable en caliente.
 - **`ApiBridge.minimizar_a_bandeja()` / `redimensionar_ventana()` / `maximizar_ventana()`**: Control dinámico de ventana.
@@ -173,18 +177,27 @@ Módulo que expone métodos de negocio directamente a JavaScript vía `window.py
 ### 2.3. Servicio Web App Cloud para Celulares (`backend/google_apps_script.js`)
 API serverless alojada 24/7 en Google Cloud para la app móvil Android:
 - **`doGet(e)` / `doPost(e)`**: Manejo de peticiones HTTP REST con formato JSON y soporte CORS.
-- **`getCatalogos()`**: Lectura directa de las 8 hojas de catálogo y listas de personal.
+- **`getCatalogos()`**: Lectura directa de las 8 hojas de catálogo, estado de mantenimiento y listas de personal.
 - **`uploadSignatureToDrive(base64, prefix)`**: Creación de archivo PNG en Google Drive con permisos públicos de lectura.
-- **`registrarSalida(data)` / `registrarRetorno(data)`**: Inserción y actualización atómica en `registro_gastos` y `movimientos_stock`.
+- **`registrarSalida(data)` / `registrarRetorno(data)`**: Inserción y actualización atómica en `registro_gastos` con mapeo dinámico de encabezados.
+- **`marcarMantenimiento(data)` / `finalizarMantenimiento(data)`**: Modificación de columnas `En_Mantenimiento`, `Tipo_Mantenimiento`, `Fecha_Inicio_Mantenimiento` y `Fecha_Fin_Mantenimiento`.
+- **`actualizarStock(data)`**: Modificación directa de stock en las pestañas correspondientes.
 
 ### 2.4. Componentes de Interfaz de Usuario
 - **`App` (`src/App.jsx`)**: Componente raíz con control de pestañas, carga en paralelo, sondeo automático cada 30 segundos y notificaciones Toast flotantes.
-- **`Navbar` (`src/components/Navbar.jsx`)**: Barra superior con isotipo Ingeap, indicador de estado de red, conmutador de tema y accesos rápidos.
+- **`Navbar` (`src/components/Navbar.jsx`)**: Barra superior con logo oficial de Ingeap, acceso directo al Menú Inicial, indicador de estado de red y conmutador de tema.
+- **`HomeMenuView` (`src/components/HomeMenuView.jsx`)**: Menú inicial / hub con accesos rápidos visuales a todos los módulos y resumen métrico de viajes activos y alertas.
 - **`Dashboard` (`src/components/Dashboard.jsx`)**: Vista de métricas, buscador en tiempo real de viajes en terreno, tarjetas de viaje y enlaces directos a remitos PDF.
-- **`SalidaForm` (`src/components/SalidaForm.jsx`)**: Formulario multiproyecto con selección de personal, buscador de inventario, ingreso de odómetro/unidades iniciales y captura de firma.
-- **`RetornoModal` (`src/components/RetornoModal.jsx`)**: Modal de liquidación con selector de modo equitativo o por sliders porcentuales, validación matemática de suma 100% y captura de firma de retorno.
-- **`CatalogViewer` (`src/components/CatalogViewer.jsx`)**: Explorador completo de las 8 categorías del inventario con previsualización de imágenes, números de serie y códigos internos.
+- **`SalidaForm` (`src/components/SalidaForm.jsx`)**: Formulario multiproyecto con lector de QR integrado (cámara WebRTC), advertencias visuales de mantenimiento sin bloqueo y cálculo adaptativo de unidades de medida.
+- **`RetornoModal` (`src/components/RetornoModal.jsx`)**: Modal de liquidación con selector de modo equitativo o por sliders porcentuales, soporte para días de uso en adicionales e instrumental y captura de firma.
+- **`CatalogViewer` (`src/components/CatalogViewer.jsx`)**: Explorador con códigos internos en etiquetas destacadas, botón de impresión de etiqueta QR con PDF vectorial, control de mantenimiento y ajuste directo de stock.
+- **`CatalogEditorModal` (`src/components/CatalogEditorModal.jsx`)**: Editor con selector de modo de costeo (`km`, `días de uso`, `ciclos de batería`, `cantidad`), sugerencias de formato de código según categoría y gestión de compatibilidades.
+- **`QRScannerModal` (`src/components/QRScannerModal.jsx`)**: Modal de escaneo de códigos QR mediante la cámara del móvil o webcam con conmutación de cámara y carga manual de respaldo.
+- **`QRLabelModal` (`src/components/QRLabelModal.jsx`)**: Generador de etiquetas patrimoniales de alta resolución con previsualización en vivo, código QR vectorial, logotipo de Ingeap y descarga directa de documento PDF listo para imprimir.
+- **`SolicitudesViewer` (`src/components/SolicitudesViewer.jsx`)**: Requerimientos de compra con selector estructurado de solicitantes agrupado por áreas operativas (Topografía, Geofísica, Drones, Taller, etc.) y empleados.
+- **`MovimientosViewer` (`src/components/MovimientosViewer.jsx`)**: Kardex con lista de selección de elementos de catálogo y asignación de repuestos a equipos e instrumental de destino.
 - **`SignaturePadModal` (`src/components/SignaturePadModal.jsx`)**: Canvas interactivo compatible con pantallas táctiles móviles y mouse de PC, con funciones de limpieza y exportación a PNG Base64.
 - **`SettingsModal` (`src/components/SettingsModal.jsx`)**: Diálogo inteligente con detección de entorno (Modo Escritorio Nativo vs Modo Móvil Autónomo 24/7), configuración de Google Apps Script y estado de cola offline.
 - **`ThemeProvider` / `useTheme` (`src/context/ThemeContext.jsx`)**: Proveedor de contexto para alternar fluidamente entre tema claro y oscuro con persistencia en `localStorage`.
+
 

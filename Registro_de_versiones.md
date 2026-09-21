@@ -4,6 +4,36 @@ Historial cronológico de versiones, mejoras y correcciones implementadas en el 
 
 ---
 
+## [1.2.0] - 2026-09-20
+
+### ✨ Nuevas Funcionalidades y Experiencia de Usuario (14 Mejoras)
+- 🏠 **Menú Inicial Principal:** Pantalla de bienvenida (`HomeMenuView`) con tarjetas de acceso directo por módulo, resumen de estado del sistema e identidad de marca.
+- 🏢 **Identidad Visual Corporativa:** Incorporación del logo oficial de Ingeap en cabecera, inicio, modales, etiquetas QR y remitos PDF generados.
+- 🏷️ **Generador de Etiquetas QR e Impresión PDF:**
+  - Códigos QR automáticos por código interno o ID de ítem.
+  - Modal para previsualización, ajuste de tamaño e impresión de tarjetas/stickers PDF en alta resolución con el logo de Ingeap.
+- 📷 **Lector de Códigos QR Integrado:**
+  - Escaneo directo mediante cámara en dispositivos móviles y web con soporte de linterna (torch).
+  - Reconocimiento automático de códigos internos o etiquetas impresas para agilizar la carga de instrumental, accesorios y herramientas en salidas.
+- ⚠️ **Gestión de Mantenimiento y Calibración:**
+  - Registro de puesta en mantenimiento con tipo de servicio y fechas de inicio/retorno estimado.
+  - Alertas visuales destacadas (`⚠️ En Mantenimiento`) en catálogo y salidas para prevención, sin bloqueo forzado de instrumental.
+  - Cierre automático del mantenimiento al reintegrar el equipo al inventario.
+- ⏱️ **Modo de Costeo Dinámico por Categoría:**
+  - Soporte de costeo por **días de uso** (adicionales como bastones, trípodes, GPS), **km** (movilidad), **ciclos de batería** (drones) y **cantidad** (materiales).
+  - Configuración y edición directa desde el Catálogo.
+- 📦 **Ajuste Físico de Stock en Catálogo:**
+  - Posibilidad de editar el stock actual de indumentaria, EPP, materiales y herramientas con registro de auditoría.
+- 🛒 **Solicitudes de Compra con Solicitante Clasificado:**
+  - Selector organizado por Áreas Operativas de Ingeap y Listado de Empleados.
+- 🔧 **Kardex y Asignación de Repuestos a Equipos:**
+  - Selector de repuestos vinculado a ítems de catálogo y campo de selección del instrumental o vehículo de destino.
+- ☁️ **Sincronización Cloud y Google Apps Script Reforzado:**
+  - Búsqueda dinámica de encabezados en hojas de cálculo para resiliencia ante columnas desordenadas o renombradas.
+  - Soporte de campos extendidos en la API Google Apps Script.
+
+---
+
 ## [1.1.0] - 2026-09-20
 
 ### 🚀 Modernización de Arquitectura Desktop (Adaptación ReporteDiario)

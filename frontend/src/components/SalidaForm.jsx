@@ -13,9 +13,13 @@ import {
   X, 
   Car,
   Building2,
-  Info
+  Info,
+  QrCode,
+  Camera,
+  AlertTriangle
 } from 'lucide-react';
 import { SignaturePadModal } from './SignaturePadModal';
+import { QRScannerModal } from './QRScannerModal';
 import { api } from '../api';
 
 export const SalidaForm = ({ 
@@ -38,6 +42,10 @@ export const SalidaForm = ({
   // Firma
   const [isSigModalOpen, setIsSigModalOpen] = useState(false);
   const [firmaBase64, setFirmaBase64] = useState('');
+
+  // Scanner QR
+  const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState(null);
 
   // Estados de envío
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -90,13 +98,15 @@ export const SalidaForm = ({
   // Agregar ítem aplicando las reglas de salida
   const handleAddItem = (item) => {
     const cat = (item.categoria || '').toLowerCase();
-    const isMov = cat.includes('movilidad');
-    const isDron = Boolean(item.es_dron || (item.nombre || '').toLowerCase().includes('dron'));
-    const isIns = cat.includes('instrumental') && !isDron;
+    const modo = (item.modo_costeo || '').toLowerCase();
+    const isMov = modo === 'km' || cat.includes('movilidad');
+    const isDron = modo === 'ciclos de bateria' || Boolean(item.es_dron || (item.nombre || '').toLowerCase().includes('dron'));
+    const isAdicional = cat.includes('adicional') || cat.includes('accesorio');
+    const isIns = modo === 'dias de uso' || isAdicional || (cat.includes('instrumental') && !isDron);
 
     let initUnidad = 1.0;
     if (isMov) initUnidad = 0.0;
-    if (isIns) initUnidad = 0.0; // Instrumental (excepto drones) valor salida = 0
+    if (isIns) initUnidad = 0.0; // Instrumental / Adicionales: valor salida = 0 (días de uso al retorno)
 
     setSelectedItems(prev => [
       ...prev,
@@ -105,10 +115,53 @@ export const SalidaForm = ({
         isMov,
         isIns,
         isDron,
+        isAdicional,
         unidad_s: initUnidad,
         costo_u: isMov ? 0.45 : (isIns ? 25.0 : 10.0),
       }
     ]);
+  };
+
+  // Manejador del escaneo QR
+  const handleQRScan = (decodedText) => {
+    setIsScannerOpen(false);
+    if (!decodedText) return;
+    const text = decodedText.trim().toLowerCase();
+    
+    // Buscar elemento en inventario coincidiendo con código interno, ID o serie
+    const found = inventario.find(i => {
+      const code = (i.codigo_interno || '').toLowerCase();
+      const idStr = String(i.id || '').toLowerCase();
+      const serie = (i.numero_serie || '').toLowerCase();
+      return (
+        code === text ||
+        idStr === text ||
+        (serie && serie === text) ||
+        text.includes(code && code.length > 2 ? code : '____none____')
+      );
+    });
+
+    if (found) {
+      const already = selectedItems.some(si => si.id === found.id);
+      if (already) {
+        setScanFeedback({ 
+          type: 'warning', 
+          msg: `El elemento "[${found.codigo_interno || found.id}] ${found.nombre}" ya está agregado.` 
+        });
+      } else {
+        handleAddItem(found);
+        setScanFeedback({ 
+          type: 'success', 
+          msg: `✓ Agregado vía QR: "[${found.codigo_interno || found.id}] ${found.nombre}"` 
+        });
+      }
+    } else {
+      setScanFeedback({ 
+        type: 'error', 
+        msg: `No se encontró ningún elemento en inventario con el código QR: "${decodedText}"` 
+      });
+    }
+    setTimeout(() => setScanFeedback(null), 5000);
   };
 
   const handleItemChange = (index, field, value) => {
@@ -378,7 +431,7 @@ export const SalidaForm = ({
               <Truck size={16} color="var(--primary-red)" /> 3. Elementos a Llevar ({selectedItems.length} seleccionados) *
             </label>
 
-            {/* Filtros de Categoría y Búsqueda */}
+            {/* Filtros de Categoría, Búsqueda y Botón Escanear QR */}
             <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
               <select
                 className="form-select"
@@ -392,7 +445,7 @@ export const SalidaForm = ({
                 ))}
               </select>
 
-              <div style={{ position: 'relative', flex: 1, minWidth: '220px' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: '200px' }}>
                 <Search size={16} style={{ position: 'absolute', left: '10px', top: '11px', color: 'var(--text-dim)' }} />
                 <input
                   type="text"
@@ -403,7 +456,50 @@ export const SalidaForm = ({
                   onChange={(e) => setItemSearch(e.target.value)}
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={() => setIsScannerOpen(true)}
+                className="btn btn-primary"
+                style={{ 
+                  height: '38px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '0.45rem', 
+                  whiteSpace: 'nowrap',
+                  fontWeight: 600,
+                  fontSize: '0.85rem'
+                }}
+                title="Escanear código QR impreso con la cámara"
+              >
+                <Camera size={16} /> Escanear QR
+              </button>
             </div>
+
+            {/* Banner de feedback de escaneo QR */}
+            {scanFeedback && (
+              <div style={{
+                padding: '0.6rem 0.85rem',
+                borderRadius: '6px',
+                background: scanFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.15)' : (scanFeedback.type === 'warning' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)'),
+                border: `1px solid ${scanFeedback.type === 'success' ? 'var(--accent-emerald)' : (scanFeedback.type === 'warning' ? 'var(--accent-amber)' : 'var(--accent-red)')}`,
+                color: scanFeedback.type === 'success' ? 'var(--accent-emerald)' : (scanFeedback.type === 'warning' ? 'var(--accent-amber)' : 'var(--accent-red)'),
+                fontSize: '0.85rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: '0.75rem'
+              }}>
+                <span>{scanFeedback.msg}</span>
+                <button 
+                  type="button" 
+                  onClick={() => setScanFeedback(null)} 
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Lista disponible para agregar */}
             <div style={{
@@ -433,19 +529,40 @@ export const SalidaForm = ({
                       fontSize: '0.825rem'
                     }}
                   >
-                    <div>
-                      <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: 700, marginRight: '0.5rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '0.35rem' }}>
+                      <span style={{ fontSize: '0.72rem', color: 'var(--accent-cyan)', fontWeight: 700 }}>
                         [{item.categoria}]
                       </span>
-                      <strong style={{ color: 'var(--text-main)' }}>{item.nombre}</strong>
                       {item.codigo_interno && (
-                        <span style={{ color: 'var(--text-dim)', marginLeft: '0.4rem', fontFamily: 'monospace' }}>
+                        <span style={{ 
+                          background: 'rgba(204, 51, 51, 0.12)', 
+                          color: 'var(--primary-red)', 
+                          padding: '0.1rem 0.4rem', 
+                          borderRadius: '4px', 
+                          fontFamily: 'monospace', 
+                          fontWeight: 700, 
+                          fontSize: '0.78rem' 
+                        }}>
                           [{item.codigo_interno}]
                         </span>
                       )}
+                      <strong style={{ color: 'var(--text-main)' }}>{item.nombre}</strong>
                       {item.numero_serie && (
-                        <span style={{ color: 'var(--corporate-gray)', marginLeft: '0.4rem', fontSize: '0.75rem' }}>
+                        <span style={{ color: 'var(--corporate-gray)', fontSize: '0.75rem' }}>
                           S/N: {item.numero_serie}
+                        </span>
+                      )}
+                      {item.en_mantenimiento && (
+                        <span style={{
+                          background: 'rgba(245, 158, 11, 0.2)',
+                          color: 'var(--accent-amber)',
+                          padding: '0.15rem 0.45rem',
+                          borderRadius: '4px',
+                          fontSize: '0.72rem',
+                          fontWeight: 700,
+                          border: '1px solid rgba(245, 158, 11, 0.4)'
+                        }}>
+                          ⚠️ En Mantenimiento ({item.tipo_mantenimiento || 'Revisión'})
                         </span>
                       )}
                     </div>
@@ -479,10 +596,30 @@ export const SalidaForm = ({
                       <tr key={idx} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                         <td style={{ padding: '0.65rem 0.85rem' }}>
                           <span style={{ fontSize: '0.75rem', color: 'var(--corporate-gray)' }}>{item.categoria}</span>
-                          <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{item.nombre}</div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            {item.codigo_interno && (
+                              <span style={{ 
+                                background: 'rgba(204, 51, 51, 0.12)', 
+                                color: 'var(--primary-red)', 
+                                padding: '0.1rem 0.35rem', 
+                                borderRadius: '4px', 
+                                fontFamily: 'monospace', 
+                                fontWeight: 700, 
+                                fontSize: '0.75rem' 
+                              }}>
+                                [{item.codigo_interno}]
+                              </span>
+                            )}
+                            <strong style={{ color: 'var(--text-main)' }}>{item.nombre}</strong>
+                          </div>
+                          {item.en_mantenimiento && (
+                            <div style={{ fontSize: '0.74rem', color: 'var(--accent-amber)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.25rem', marginTop: '0.15rem' }}>
+                              <AlertTriangle size={12} /> Alerta: Elemento en mantenimiento ({item.tipo_mantenimiento || 'Revisión'})
+                            </div>
+                          )}
                           {item.isIns && (
                             <div style={{ fontSize: '0.72rem', color: 'var(--accent-amber)', display: 'flex', alignItems: 'center', gap: '0.2rem' }}>
-                              <Info size={11} /> Instrumental: valor salida 0 (días de uso al retorno)
+                              <Info size={11} /> {item.isAdicional ? 'Adicional' : 'Instrumental'}: valor salida 0 (días de uso al retorno)
                             </div>
                           )}
                           {item.isMov && (
@@ -501,7 +638,7 @@ export const SalidaForm = ({
                                 value={0}
                                 disabled
                               />
-                              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>0 fijo</span>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-dim)' }}>0 (días al ret.)</span>
                             </div>
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
@@ -513,10 +650,10 @@ export const SalidaForm = ({
                                 style={{ padding: '0.4rem 0.5rem', fontSize: '0.85rem' }}
                                 value={item.unidad_s}
                                 onChange={(e) => handleItemChange(idx, 'unidad_s', e.target.value)}
-                                placeholder={item.isMov ? "Km Odómetro" : "Cantidad"}
+                                placeholder={item.isMov ? "Km Odómetro" : (item.isDron ? "Ciclos bat." : "Cantidad")}
                               />
                               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                                {item.isMov ? 'km' : 'u'}
+                                {item.isMov ? 'km' : (item.isDron ? 'ciclos' : 'u')}
                               </span>
                             </div>
                           )}
@@ -620,6 +757,13 @@ export const SalidaForm = ({
         onClose={() => setIsSigModalOpen(false)}
         onSave={(b64) => setFirmaBase64(b64)}
         title="Firma de Salida - Responsable"
+      />
+
+      {/* MODAL DE ESCANER QR */}
+      <QRScannerModal
+        isOpen={isScannerOpen}
+        onClose={() => setIsScannerOpen(false)}
+        onScan={handleQRScan}
       />
     </div>
   );
