@@ -35,7 +35,7 @@ const ID_CARPETA_FIRMAS = "";
 
 const REGISTRO_GASTOS_COLUMNS = [
   "id_gasto", "id_viaje", "id_proyecto", "proyecto", "tipo", "elemento",
-  "fecha_s", "fecha_r", "unidad_s", "unidad_r", "costo_u", "costo_t",
+  "fecha_desde", "fecha_hasta", "fecha_s", "fecha_r", "unidad_s", "unidad_r", "costo_u", "costo_t",
   "user_s", "firma_s", "user_r", "firma_r", "fecha_hora_s", "fecha_hora_r", "unidad_medida"
 ];
 
@@ -520,6 +520,8 @@ function registrarSalida(data) {
   const items = data.items || [];
   const userS = data.user_s || "";
   const fechaS = data.fecha_s || Utilities.formatDate(new Date(), "GMT-3", "yyyy-MM-dd HH:mm:ss");
+  const fechaDesde = data.fecha_desde || "";
+  const fechaHasta = data.fecha_hasta || "";
   const nowIso = new Date().toISOString();
 
   const firmaBase64 = data.firma_s_base64 || data.firma_s || "";
@@ -548,6 +550,8 @@ function registrarSalida(data) {
         "proyecto": String(proj.denominacion || ""),
         "tipo": tipo,
         "elemento": elem,
+        "fecha_desde": fechaDesde,
+        "fecha_hasta": fechaHasta,
         "fecha_s": fechaS,
         "fecha_r": "",
         "unidad_s": unidadS,
@@ -1085,6 +1089,43 @@ function crearElemento(data) {
   if (!sheet) return { success: false, error: "Pestaña no encontrada: " + tabName };
 
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  
+  // Autogenerar código interno si está vacío
+  if (!data.codigo_interno || String(data.codigo_interno).trim() === "") {
+    try {
+      const idxCod = headers.findIndex(h => ["Codigo_interno", "Numero_interno"].includes(h));
+      if (idxCod !== -1) {
+        const lastRow = sheet.getLastRow();
+        let maxNum = 0;
+        let prefix = categoria.substring(0, 3).toUpperCase();
+        if (lastRow > 1) {
+          const colData = sheet.getRange(2, idxCod + 1, lastRow - 1, 1).getValues();
+          colData.forEach(r => {
+            const code = String(r[0]).trim();
+            if (code) {
+              const numMatch = code.match(/(\d+)$/);
+              if (numMatch) {
+                const num = parseInt(numMatch[1], 10);
+                if (num > maxNum) maxNum = num;
+              }
+              const preMatch = code.match(/^([A-Za-z]+)/);
+              if (preMatch) {
+                prefix = preMatch[1].toUpperCase();
+              }
+            }
+          });
+        }
+        let maxNumStr = String(maxNum + 1);
+        while (maxNumStr.length < 3) maxNumStr = "0" + maxNumStr;
+        data.codigo_interno = prefix + "-" + maxNumStr;
+      } else {
+        data.codigo_interno = categoria.substring(0, 3).toUpperCase() + "-001";
+      }
+    } catch(e) {
+      data.codigo_interno = categoria.substring(0, 3).toUpperCase() + "-001";
+    }
+  }
+
   const nuevoId = Utilities.getUuid();
   const newRow = [];
 

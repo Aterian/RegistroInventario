@@ -34,6 +34,9 @@ export const SalidaForm = ({
   const [selectedUser, setSelectedUser] = useState('');
   const [customUser, setCustomUser] = useState('');
   const [selectedItems, setSelectedItems] = useState([]);
+  const [fechaDesde, setFechaDesde] = useState('');
+  const [fechaHasta, setFechaHasta] = useState('');
+  const [extrasText, setExtrasText] = useState('');
   
   // Catálogo y búsqueda de ítems
   const [itemSearch, setItemSearch] = useState('');
@@ -206,8 +209,17 @@ export const SalidaForm = ({
     try {
       const payload = {
         proyectos_ids: selectedProyectos,
+        proyectos: selectedProyectos.map(pId => {
+          const pObj = proyectos.find(p => String(p.id_proyecto) === String(pId));
+          return {
+            id_proyecto: String(pId),
+            denominacion: pObj ? pObj.denominacion : `Proyecto #${pId}`
+          };
+        }),
+        fecha_desde: fechaDesde,
+        fecha_hasta: fechaHasta,
         items: selectedItems.map(it => ({
-          id: String(it.id),
+          id: String(it.id || Date.now().toString()),
           categoria: it.categoria,
           codigo_interno: it.codigo_interno || '',
           nombre: it.nombre,
@@ -218,6 +230,18 @@ export const SalidaForm = ({
         user_s: finalUser,
         firma_s_base64: firmaBase64
       };
+
+      if (extrasText.trim()) {
+        payload.items.push({
+          id: `extra-${Date.now()}`,
+          categoria: "Extra",
+          codigo_interno: "",
+          nombre: extrasText.trim(),
+          numero_serie: "",
+          unidad_s: 1.0,
+          costo_u: 0.0
+        });
+      }
 
       await api.registrarSalida(payload);
       if (onSuccess) onSuccess();
@@ -262,12 +286,39 @@ export const SalidaForm = ({
         )}
 
         <form onSubmit={handleSubmit}>
-          {/* SECCIÓN 1: BUSCADOR RÁPIDO DE PROYECTOS */}
+          {/* SECCIÓN 1: FECHAS */}
+          <div style={{ marginBottom: '1.75rem' }}>
+            <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+              <Layers size={16} color="var(--primary-red)" /> 1. Fechas del Viaje (Opcional)
+            </label>
+            <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Desde</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: '200px' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Hasta</span>
+                <input
+                  type="date"
+                  className="form-input"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* SECCIÓN 2: BUSCADOR RÁPIDO DE PROYECTOS */}
           <div style={{ marginBottom: '1.75rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
                 <Building2 size={16} color="var(--primary-red)" />
-                1. Proyectos Asignados ({selectedProyectos.length} seleccionados) *
+                2. Proyectos Asignados ({selectedProyectos.length} seleccionados) *
               </span>
               {selectedProyectos.length > 0 && (
                 <button 
@@ -391,10 +442,10 @@ export const SalidaForm = ({
             </div>
           </div>
 
-          {/* SECCIÓN 2: RESPONSABLE */}
+          {/* SECCIÓN 3: RESPONSABLE */}
           <div style={{ marginBottom: '1.75rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <User size={16} color="var(--primary-red)" /> 2. Empleado que Retira el Inventario *
+              <User size={16} color="var(--primary-red)" /> 3. Empleado que Retira el Inventario *
             </label>
             <div style={{ display: 'grid', gridTemplateColumns: selectedUser === 'OTRO' ? '1fr 1fr' : '1fr', gap: '0.75rem' }}>
               <select
@@ -425,10 +476,10 @@ export const SalidaForm = ({
             </div>
           </div>
 
-          {/* SECCIÓN 3: SELECCIÓN DE ELEMENTOS CON REGLAS DE NEGOCIO */}
+          {/* SECCIÓN 4: SELECCIÓN DE ELEMENTOS CON REGLAS DE NEGOCIO */}
           <div style={{ marginBottom: '1.75rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <Truck size={16} color="var(--primary-red)" /> 3. Elementos a Llevar ({selectedItems.length} seleccionados) *
+              <Truck size={16} color="var(--primary-red)" /> 4. Elementos a Llevar ({selectedItems.length} seleccionados) *
             </label>
 
             {/* Filtros de Categoría, Búsqueda y Botón Escanear QR */}
@@ -691,10 +742,28 @@ export const SalidaForm = ({
             )}
           </div>
 
-          {/* SECCIÓN 4: FIRMA DIGITAL */}
+          {/* SECCIÓN 5: EXTRAS */}
+          <div style={{ marginBottom: '1.75rem' }}>
+            <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+              <Plus size={16} color="var(--primary-red)" /> 5. Elementos Adicionales (Extras)
+            </label>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem' }}>
+              Si llevan algo que no está en el inventario, ingrese el detalle aquí. Se registrará como un elemento de categoría "Extra".
+            </p>
+            <textarea
+              className="form-input"
+              rows={2}
+              placeholder="Ej: Herramienta propia de Juan, casco extra, etc."
+              value={extrasText}
+              onChange={(e) => setExtrasText(e.target.value)}
+              style={{ width: '100%', resize: 'vertical' }}
+            />
+          </div>
+
+          {/* SECCIÓN 6: FIRMA DIGITAL */}
           <div style={{ marginBottom: '2rem' }}>
             <label className="form-label" style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-              <Edit3 size={16} color="var(--primary-red)" /> 4. Firma Digital de Salida *
+              <Edit3 size={16} color="var(--primary-red)" /> 6. Firma Digital de Salida *
             </label>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>

@@ -260,6 +260,8 @@ class ApiBridge:
             user_s = data.get("user_s", "")
             firma_b64 = data.get("firma_s", "")
             fecha_s = data.get("fecha_s")
+            fecha_desde = data.get("fecha_desde")
+            fecha_hasta = data.get("fecha_hasta")
 
             # Procesar firma
             firma_link, _ = google_service.upload_signature(firma_b64, f"salida_{id_viaje[:8]}")
@@ -270,7 +272,9 @@ class ApiBridge:
                 items=items,
                 user_s=user_s,
                 firma_s=firma_link,
-                fecha_s=fecha_s
+                fecha_s=fecha_s,
+                fecha_desde=fecha_desde,
+                fecha_hasta=fecha_hasta
             )
             return {"success": True, "id_viaje": id_viaje, "filas_creadas": len(filas)}
         except Exception as e:

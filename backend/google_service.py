@@ -73,6 +73,8 @@ REGISTRO_GASTOS_COLUMNS = [
     "proyecto",
     "tipo",
     "elemento",
+    "fecha_desde",
+    "fecha_hasta",
     "fecha_s",
     "fecha_r",
     "unidad_s",
@@ -886,6 +888,38 @@ class GoogleService:
         data["id"] = nuevo_id
         data["categoria"] = categoria
 
+        # Autogenerar código interno si está vacío
+        if not data.get("codigo_interno") or str(data.get("codigo_interno")).strip() == "":
+            try:
+                import re
+                cat_data = self.get_catalogos(recargar=False)
+                cat_items = [
+                    str(item["codigo_interno"]).strip() 
+                    for item in cat_data.get("inventario", []) 
+                    if item.get("categoria") == categoria and item.get("codigo_interno")
+                ]
+                
+                if cat_items:
+                    max_num = 0
+                    prefix = categoria[:3].upper()
+                    for code in cat_items:
+                        match = re.search(r'(\d+)$', code)
+                        if match:
+                            num = int(match.group(1))
+                            if num > max_num:
+                                max_num = num
+                        # Usar el prefijo del último elemento procesado
+                        m_prefix = re.match(r'^([A-Za-z]+)', code)
+                        if m_prefix:
+                            prefix = m_prefix.group(1).upper()
+                            
+                    data["codigo_interno"] = f"{prefix}-{max_num + 1:03d}"
+                else:
+                    data["codigo_interno"] = f"{categoria[:3].upper()}-001"
+            except Exception as e:
+                logger.warning(f"Error generando codigo_interno automatico: {e}")
+                data["codigo_interno"] = f"{categoria[:3].upper()}-001"
+
         # Guardar en SQLite local
         save_elemento_catalogo_local(data)
         if data.get("stock_minimo"):
@@ -1355,7 +1389,9 @@ class GoogleService:
         items: List[Dict[str, Any]],
         user_s: str,
         firma_s: str,
-        fecha_s: Optional[str] = None
+        fecha_s: Optional[str] = None,
+        fecha_desde: Optional[str] = None,
+        fecha_hasta: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Registra la salida multiproyecto y asienta los egresos en el Kardex."""
         if not fecha_s:
@@ -1383,6 +1419,8 @@ class GoogleService:
                     "proyecto": str(proj.get("denominacion", "")),
                     "tipo": tipo,
                     "elemento": elemento,
+                    "fecha_desde": fecha_desde or "",
+                    "fecha_hasta": fecha_hasta or "",
                     "fecha_s": fecha_s,
                     "fecha_r": "",
                     "unidad_s": unidad_s,
